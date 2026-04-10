@@ -1,4 +1,3 @@
-import Indexer.indexer
 from Indexer.searcher import mostrar_detalle_completo, mostrar_resultados, buscar_canciones
 from Indexer.indexer import cargar_todo
 

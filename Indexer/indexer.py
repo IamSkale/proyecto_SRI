@@ -6,8 +6,6 @@ import csv
 from pathlib import Path
 from collections import defaultdict
 
-# ========== PARTE 1: INDEXACIÓN ==========
-
 def cargar_todo(data_folder, lyrics_folder):
     """Carga todos los datos y devuelve info_completa"""
     
