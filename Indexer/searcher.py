@@ -7,16 +7,11 @@ from difflib import SequenceMatcher
 _indexador_global = None
 
 def set_indexador(indexador):
-    """Establece el indexador para usar en búsquedas TF-IDF"""
     global _indexador_global
     _indexador_global = indexador
 
 
 def calcular_similitud_textual(texto1, texto2):
-    """
-    Calcula similitud entre dos textos usando SequenceMatcher
-    Útil para comparar títulos completos
-    """
     if not texto1 or not texto2:
         return 0
     return SequenceMatcher(None, texto1.lower(), texto2.lower()).ratio()
@@ -41,19 +36,17 @@ def calcular_puntuacion_bm25(tokens_query, doc_tokens, doc_len, avg_doc_len, k1=
     return score
 
 
-def buscar_canciones_avanzado(query, info_completa=None, metodo='hibrido', min_score=20):
+def buscar_canciones_avanzado(query, min_score=20):
     global _indexador_global
     
     if not query.strip():
         return []
     
-    query_original = query
     query = query.lower().strip()
-    
     resultados = []
     
     # Calcular longitud promedio de documentos para BM25
-    if _indexador_global and metodo in ['bm25', 'hibrido']:
+    if _indexador_global:
         doc_lengths = [len(doc['letra'].split()) + len(doc['titulo'].split()) + len(doc['artista'].split()) 
                        for doc in _indexador_global.documentos.values()]
         avg_doc_len = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 100
@@ -89,41 +82,19 @@ def buscar_canciones_avanzado(query, info_completa=None, metodo='hibrido', min_s
             puntuacion += coincidencias_artista * 1.0
             razones.append(f"{coincidencias_artista} palabras en artista")
         
-        # 4. Búsqueda en letra (usando TF-IDF o BM25)
-        if _indexador_global and metodo in ['bm25', 'tfidf', 'hibrido']:
+        # 4. Búsqueda en letra usando BM25 (parte del método híbrido)
+        if _indexador_global:
             texto_completo = f"{cancion['titulo']} {cancion['artista']} {cancion['letra']}"
             tokens_doc = _indexador_global.procesador.limpiar_texto(texto_completo)
             tokens_query_proc = _indexador_global.procesador.limpiar_texto(query)
             
-            if metodo == 'bm25' or metodo == 'hibrido':
-                doc_len = len(texto_completo.split())
-                puntuacion_bm25 = calcular_puntuacion_bm25(tokens_query_proc, tokens_doc, doc_len, avg_doc_len)
-                puntuacion += puntuacion_bm25 * 1.5
-                if puntuacion_bm25 > 0:
-                    razones.append(f"BM25 ({puntuacion_bm25:.3f})")
-            
-            elif metodo == 'tfidf':
-                resultados_tfidf = dict(_indexador_global.buscar(query, top_k=50))
-                if doc_id in resultados_tfidf:
-                    puntuacion += resultados_tfidf[doc_id] * 2.0
-                    razones.append(f"TF-IDF ({resultados_tfidf[doc_id]:.3f})")
+            doc_len = len(texto_completo.split())
+            puntuacion_bm25 = calcular_puntuacion_bm25(tokens_query_proc, tokens_doc, doc_len, avg_doc_len)
+            puntuacion += puntuacion_bm25 * 1.5
+            if puntuacion_bm25 > 0:
+                razones.append(f"BM25 ({puntuacion_bm25:.3f})")
         
-        # 5. Búsqueda textual directa (fallback)
-        elif metodo == 'textual':
-            if (query in cancion['titulo'].lower() or 
-                query in cancion['artista'].lower() or 
-                query in cancion['letra'].lower()):
-                if query == cancion['titulo'].lower():
-                    puntuacion += 10
-                elif query in cancion['titulo'].lower():
-                    puntuacion += 5
-                elif query in cancion['artista'].lower():
-                    puntuacion += 3
-                else:
-                    puntuacion += 1
-                razones.append("coincidencia textual")
-        
-        # 6. Bonus por coincidencia exacta de frase
+        # 5. Bonus por coincidencia exacta de frase
         if query in cancion['titulo'].lower():
             puntuacion += 8.0
             razones.append("frase exacta en título")
@@ -131,7 +102,7 @@ def buscar_canciones_avanzado(query, info_completa=None, metodo='hibrido', min_s
             puntuacion += 4.0
             razones.append("frase exacta en artista")
         
-        # 7. Bonus por palabras iniciales
+        # 6. Bonus por palabras iniciales
         palabras_query_lista = query.split()
         if palabras_query_lista:
             primera_palabra = palabras_query_lista[0]
@@ -139,7 +110,7 @@ def buscar_canciones_avanzado(query, info_completa=None, metodo='hibrido', min_s
                 puntuacion += 3.0
                 razones.append(f"título comienza con '{primera_palabra}'")
         
-        # FILTRO DE RELEVANCIA MÍNIMA - SOLO AGREGAR SI PUNTUACION >= min_score
+        # FILTRO DE RELEVANCIA MÍNIMA
         if puntuacion >= min_score:
             resultados.append((doc_id, puntuacion, razones))
     
@@ -148,35 +119,21 @@ def buscar_canciones_avanzado(query, info_completa=None, metodo='hibrido', min_s
     
     return resultados
 
-
-def buscar_canciones(query, info_completa=None, metodo='hibrido', min_score=20):
-    """
-    Busca canciones usando el método especificado
-    
-    Args:
-        query: texto a buscar
-        info_completa: diccionario de documentos (fallback)
-        metodo: 'bm25', 'tfidf', 'textual', 'hibrido'
-        min_score: puntuación mínima para incluir resultado (default 10)
-    
-    Returns:
-        lista de IDs de canciones que coinciden
-    """
-    resultados = buscar_canciones_avanzado(query, info_completa, metodo, min_score)
+def buscar_canciones(query, info_completa=None, min_score=20):
+    resultados = buscar_canciones_avanzado(query, info_completa, min_score)
     return [doc_id for doc_id, score, razones in resultados]
 
 
-def mostrar_resultados(ids=None, info_completa=None, query=None, metodo='hibrido', min_score=20):
-    """Muestra resultados con puntuación de relevancia y razones"""
+def mostrar_resultados(ids=None, info_completa=None, query=None, min_score=20):
     global _indexador_global
     
-    # Si no se pasaron IDs y hay query, buscar
+    # Si no se pasaron IDs y hay query, buscar con método híbrido
     if ids is None and query:
-        resultados = buscar_canciones_avanzado(query, info_completa, metodo, min_score)
+        resultados = buscar_canciones_avanzado(query, info_completa, min_score)
         ids_con_puntaje = resultados
         ids = [doc_id for doc_id, _, _ in resultados]
     elif ids and not isinstance(ids[0], tuple) and query:
-        resultados = buscar_canciones_avanzado(query, info_completa, metodo, min_score)
+        resultados = buscar_canciones_avanzado(query, info_completa, min_score)
         ids_con_puntaje = resultados
         ids = [doc_id for doc_id, _, _ in resultados]
     elif ids and isinstance(ids[0], tuple):
@@ -260,9 +217,7 @@ def mostrar_resultados(ids=None, info_completa=None, query=None, metodo='hibrido
     if len(ids) > 15:
         print(f"\n... y {len(ids) - 15} resultados más.")
 
-
 def mostrar_detalle_completo(cancion_id, info_completa=None):
-    """Muestra todos los detalles de una canción"""
     global _indexador_global
     
     if _indexador_global:

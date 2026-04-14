@@ -5,9 +5,7 @@ from pathlib import Path
 from collections import defaultdict, Counter
 import pickle
 
-class ProcesadorTexto:
-    """Clase para procesamiento y normalización de texto multilingüe"""
-    
+class ProcesadorTexto:    
     def __init__(self):
         # Stopwords por idioma
         self.stopwords = {
@@ -19,7 +17,6 @@ class ProcesadorTexto:
         }
     
     def _cargar_stopwords_espanol(self):
-        """Stopwords en español"""
         return {
             'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
             'a', 'ante', 'bajo', 'cabe', 'con', 'contra', 'de', 'del',
@@ -39,7 +36,6 @@ class ProcesadorTexto:
         }
     
     def _cargar_stopwords_ingles(self):
-        """Stopwords en inglés"""
         return {
             'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i',
             'it', 'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at',
@@ -55,7 +51,6 @@ class ProcesadorTexto:
         }
     
     def _cargar_stopwords_frances(self):
-        """Stopwords en francés"""
         return {
             'le', 'la', 'les', 'un', 'une', 'des', 'du', 'de', 'et', 'est',
             'sont', 'dans', 'pour', 'par', 'avec', 'sans', 'ou', 'mais',
@@ -69,7 +64,6 @@ class ProcesadorTexto:
         }
     
     def _cargar_stopwords_portugues(self):
-        """Stopwords en portugués"""
         return {
             'a', 'o', 'as', 'os', 'um', 'uma', 'uns', 'umas', 'de', 'do',
             'da', 'dos', 'das', 'em', 'no', 'na', 'nos', 'nas', 'por',
@@ -84,7 +78,6 @@ class ProcesadorTexto:
         }
     
     def _cargar_stopwords_italiano(self):
-        """Stopwords en italiano"""
         return {
             'il', 'lo', 'la', 'l', 'i', 'gli', 'le', 'un', 'uno', 'una',
             'del', 'dello', 'della', 'dei', 'degli', 'delle', 'e', 'ed',
@@ -98,7 +91,6 @@ class ProcesadorTexto:
         }
     
     def detectar_idioma(self, texto):
-        """Detecta el idioma del texto basado en caracteres especiales y palabras clave"""
         if not texto:
             return 'en'
         
@@ -130,7 +122,6 @@ class ProcesadorTexto:
         return 'en'
     
     def limpiar_texto(self, texto, idioma=None):
-        """Limpia y normaliza el texto según el idioma"""
         if not texto:
             return []
         
@@ -165,7 +156,6 @@ class ProcesadorTexto:
         return tokens
     
     def _normalizar_caracteres(self, texto):
-        """Normaliza caracteres especiales"""
         normalizaciones = {
             'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a',
             'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
@@ -181,7 +171,6 @@ class ProcesadorTexto:
         return texto
     
     def _stemming(self, palabra, idioma):
-        """Stemming básico según el idioma"""
         if len(palabra) <= 4:
             return palabra
         
@@ -264,9 +253,7 @@ class ProcesadorTexto:
         return palabra
 
 
-class IndexadorTFIDF:
-    """Clase principal para indexación con TF-IDF"""
-    
+class IndexadorTFIDF:    
     def __init__(self, data_folder, lyrics_folder):
         self.data_folder = Path(data_folder)
         self.lyrics_folder = Path(lyrics_folder)
@@ -285,7 +272,6 @@ class IndexadorTFIDF:
         self.num_documentos = 0
     
     def cargar_datos(self):
-        """Carga todos los CSVs y letras"""
         print("📁 Cargando datos...")
         
         canciones = {}
@@ -373,7 +359,6 @@ class IndexadorTFIDF:
         return self.documentos
     
     def procesar_documentos(self):
-        """Procesa todos los documentos y construye el índice TF-IDF"""
         print("\n🔧 Procesando documentos (esto puede tomar un momento)...")
         
         tf_documentos = {}
@@ -429,16 +414,6 @@ class IndexadorTFIDF:
         print(f"  ✅ Documentos procesados: {self.num_documentos}")
     
     def buscar(self, query, top_k=20):
-        """
-        Busca documentos relevantes usando similitud coseno
-        
-        Args:
-            query: String de consulta
-            top_k: Número de resultados a retornar
-            
-        Returns:
-            Lista de (doc_id, score) ordenados por relevancia
-        """
         if not query.strip():
             return []
         
@@ -482,15 +457,12 @@ class IndexadorTFIDF:
         return scores[:top_k]
     
     def obtener_documento(self, doc_id):
-        """Retorna la información de un documento"""
         return self.documentos.get(doc_id)
     
     def obtener_info_completa(self):
-        """Retorna el diccionario de documentos (para compatibilidad con searcher)"""
         return self.documentos
     
     def guardar_indice(self, archivo_salida='indice_musica.pkl'):
-        """Guarda el índice en disco"""
         print(f"\n💾 Guardando índice en {archivo_salida}...")
         
         datos = {
@@ -511,7 +483,6 @@ class IndexadorTFIDF:
         print(f"  ✅ Índice guardado")
     
     def cargar_indice(self, archivo='indice_musica.pkl'):
-        """Carga un índice previamente guardado"""
         print(f"📂 Cargando índice desde {archivo}...")
         
         with open(archivo, 'rb') as f:
@@ -530,7 +501,6 @@ class IndexadorTFIDF:
         print(f"  ✅ Índice cargado: {self.num_documentos} documentos, {len(self.vocabulario)} términos")
     
     def ejecutar_indexacion(self, archivo_salida='indice_musica.pkl'):
-        """Ejecuta todo el pipeline de indexación"""
         print("\n" + "="*60)
         print("🚀 INICIANDO INDEXACIÓN MULTILINGÜE")
         print("="*60)
@@ -544,10 +514,7 @@ class IndexadorTFIDF:
         
         return self
 
-
-# Función de conveniencia para mantener compatibilidad con el código anterior
 def cargar_todo(data_folder, lyrics_folder):
-    """Función de conveniencia que retorna info_completa (para compatibilidad)"""
     indexador = IndexadorTFIDF(data_folder, lyrics_folder)
     indexador.cargar_datos()
     return indexador.obtener_info_completa()

@@ -49,7 +49,6 @@ def main():
     
     print("\n📝 Comandos:")
     print("  <texto>                     - Buscar canciones")
-    print("  metodo [bm25|tfidf|hibrido] - Cambiar método de búsqueda")
     print("  detalle <ID>                - Ver letra completa")
     print("  stats                       - Mostrar estadísticas")
     print("  salir                       - Terminar programa")
@@ -70,17 +69,6 @@ def main():
             print(f"  Método actual: {METODO_BUSQUEDA}")
             continue
         
-        if query.lower().startswith('metodo '):
-            partes = query.split()
-            if len(partes) > 1:
-                nuevo_metodo = partes[1].lower()
-                if nuevo_metodo in ['bm25', 'tfidf', 'textual', 'hibrido']:
-                    METODO_BUSQUEDA = nuevo_metodo
-                    print(f"✅ Método cambiado a: {METODO_BUSQUEDA.upper()}")
-                else:
-                    print(f"❌ Método no válido. Opciones: bm25, tfidf, textual, hibrido")
-            continue
-        
         if query.lower().startswith('detalle '):
             partes = query.split()
             if len(partes) > 1:
@@ -98,7 +86,7 @@ def main():
             continue
             
         if query:
-            resultados = buscar_canciones_avanzado(query, metodo=METODO_BUSQUEDA, min_score=MIN_SCORE)
+            resultados = buscar_canciones_avanzado(query, min_score=MIN_SCORE)
             if resultados:
                 print(f"\n🔍 Búsqueda: '{query}' (método: {METODO_BUSQUEDA.upper()}, umbral: {MIN_SCORE})")
                 mostrar_resultados(resultados, query=query, min_score=MIN_SCORE)
