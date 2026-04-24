@@ -14,7 +14,7 @@ def main():
     MIN_SCORE = 20
     CARPETA_DATOS = "Database"
     CARPETA_LETRAS = "Database/lyrics"
-    ARCHIVO_INDICE = "indice_musica.pkl"
+    ARCHIVO_INDICE = "indice_musica.json"
     
     print("\n🚀 INICIANDO SISTEMA DE BÚSQUEDA MUSICAL...\n")
     

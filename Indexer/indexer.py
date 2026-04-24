@@ -1,9 +1,9 @@
 import csv
 import re
 import math
+import json
 from pathlib import Path
 from collections import defaultdict, Counter
-import pickle
 
 class ProcesadorTexto:    
     def __init__(self):
@@ -405,6 +405,7 @@ class IndexadorTFIDF:
         return self.documentos
     
     def guardar_indice(self, archivo_salida='indice_musica.pkl'):
+        import json
         print(f"\n💾 Guardando índice en {archivo_salida}...")
         
         datos = {
@@ -417,16 +418,16 @@ class IndexadorTFIDF:
             'idiomas_documentos': self.idiomas_documentos
         }
         
-        with open(archivo_salida, 'wb') as f:
-            pickle.dump(datos, f)
+        with open(archivo_salida, 'w', encoding='utf-8') as f:
+            json.dump(datos, f, ensure_ascii=False, indent=2)
         
         print(f"  ✅ Índice guardado")
     
-    def cargar_indice(self, archivo='indice_musica.pkl'):
+    def cargar_indice(self, archivo='indice_musica.json'):
         print(f"📂 Cargando índice desde {archivo}...")
         
-        with open(archivo, 'rb') as f:
-            datos = pickle.load(f)
+        with open(archivo, 'r', encoding='utf-8') as f:
+            datos = json.load(f)
         
         self.documentos = datos['documentos']
         self.indice_invertido = datos['indice_invertido']
@@ -438,7 +439,7 @@ class IndexadorTFIDF:
         
         print(f"  ✅ Índice cargado: {self.num_documentos} documentos, {len(self.vocabulario)} términos")
     
-    def ejecutar_indexacion(self, archivo_salida='indice_musica.pkl'):
+    def ejecutar_indexacion(self, archivo_salida='indice_musica.json'):
         print("\n" + "="*60)
         print("🚀 INICIANDO INDEXACIÓN MULTILINGÜE")
         print("="*60)
