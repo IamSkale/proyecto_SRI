@@ -264,8 +264,6 @@ class IndexadorTFIDF:
         self.indice_invertido = defaultdict(list)
         self.frecuencia_documentos = defaultdict(int)
         self.idf = {}
-        self.tfidf_matrix = {}
-        self.normas_documentos = {}
         self.vocabulario = set()
         self.idiomas_documentos = {}
         
@@ -397,64 +395,8 @@ class IndexadorTFIDF:
             df = self.frecuencia_documentos[termino]
             self.idf[termino] = math.log(self.num_documentos / (df + 1))
         
-        # Calcular TF-IDF y normas
-        print("📊 Calculando TF-IDF y normas...")
-        for doc_id, tf in tf_documentos.items():
-            self.tfidf_matrix[doc_id] = {}
-            suma_cuadrados = 0
-            
-            for termino, tf_val in tf.items():
-                tfidf_val = tf_val * self.idf.get(termino, 0)
-                self.tfidf_matrix[doc_id][termino] = tfidf_val
-                suma_cuadrados += tfidf_val ** 2
-            
-            self.normas_documentos[doc_id] = math.sqrt(suma_cuadrados)
-        
         print(f"  ✅ Vocabulario: {len(self.vocabulario)} términos únicos")
         print(f"  ✅ Documentos procesados: {self.num_documentos}")
-    
-    def buscar(self, query, top_k=20):
-        if not query.strip():
-            return []
-        
-        # Detectar idioma de la query
-        idioma_query = self.procesador.detectar_idioma(query)
-        
-        # Procesar query
-        tokens_query = self.procesador.limpiar_texto(query, idioma_query)
-        tf_query = Counter(tokens_query)
-        
-        # Calcular vector TF-IDF de la query
-        vector_query = {}
-        for termino, tf_val in tf_query.items():
-            if termino in self.idf:
-                vector_query[termino] = tf_val * self.idf[termino]
-        
-        # Calcular norma de la query
-        norma_query = math.sqrt(sum(v ** 2 for v in vector_query.values()))
-        
-        if norma_query == 0:
-            return []
-        
-        # Calcular similitud coseno con cada documento
-        scores = []
-        for doc_id in self.documentos.keys():
-            producto_punto = 0
-            for termino, peso_query in vector_query.items():
-                if termino in self.tfidf_matrix[doc_id]:
-                    producto_punto += peso_query * self.tfidf_matrix[doc_id][termino]
-            
-            if self.normas_documentos[doc_id] > 0:
-                similitud = producto_punto / (norma_query * self.normas_documentos[doc_id])
-            else:
-                similitud = 0
-            
-            scores.append((doc_id, similitud))
-        
-        # Ordenar por puntaje (mayor a menor)
-        scores.sort(key=lambda x: x[1], reverse=True)
-        
-        return scores[:top_k]
     
     def obtener_documento(self, doc_id):
         return self.documentos.get(doc_id)
@@ -470,8 +412,6 @@ class IndexadorTFIDF:
             'indice_invertido': dict(self.indice_invertido),
             'frecuencia_documentos': dict(self.frecuencia_documentos),
             'idf': self.idf,
-            'tfidf_matrix': self.tfidf_matrix,
-            'normas_documentos': self.normas_documentos,
             'vocabulario': list(self.vocabulario),
             'num_documentos': self.num_documentos,
             'idiomas_documentos': self.idiomas_documentos
@@ -492,8 +432,6 @@ class IndexadorTFIDF:
         self.indice_invertido = datos['indice_invertido']
         self.frecuencia_documentos = datos['frecuencia_documentos']
         self.idf = datos['idf']
-        self.tfidf_matrix = datos['tfidf_matrix']
-        self.normas_documentos = datos['normas_documentos']
         self.vocabulario = set(datos['vocabulario'])
         self.num_documentos = datos['num_documentos']
         self.idiomas_documentos = datos.get('idiomas_documentos', {})
