@@ -6,6 +6,10 @@ Este módulo implementa un crawler que recopila información musical
 de fuentes web confiables, respetando políticas de crawling éticas.
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import requests
 from bs4 import BeautifulSoup
 import time
@@ -13,10 +17,10 @@ import json
 import logging
 from urllib.robotparser import RobotFileParser
 from urllib.parse import urljoin, urlparse
-from pathlib import Path
 import random
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from Scraper.scraper import FactoryScraper
 
 class MusicCrawler:
     """
@@ -142,6 +146,7 @@ class MusicCrawler:
     def extract_song_data(self, soup, url):
         """
         Extraer información de canción de la página HTML.
+        Utiliza el FactoryScraper para scraping especializado por dominio.
 
         Args:
             soup (BeautifulSoup): Objeto BeautifulSoup de la página
@@ -150,74 +155,26 @@ class MusicCrawler:
         Returns:
             dict: Diccionario con información extraída de la canción
         """
-        song_info = {
-            'url': url,
-            'titulo': '',
-            'artista': '',
-            'album': '',
-            'generos': [],
-            'letra': '',
-            'metadatos': {},
-            'fecha_extraccion': time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-
         try:
-            # Extraer título (ajustar selectores según sitio específico)
-            title_selectors = [
-                'h1.song-title', '.song_header-title', 'h1[data-lyrics-id]',
-                '.header_with_cover_art-primary_info-title', 'h1'
-            ]
-
-            for selector in title_selectors:
-                title_elem = soup.select_one(selector)
-                if title_elem and title_elem.get_text().strip():
-                    song_info['titulo'] = title_elem.get_text().strip()
-                    break
-
-            # Extraer artista
-            artist_selectors = [
-                '.artist-name', '.song_artist', 'a[data-artist-id]',
-                '.header_with_cover_art-primary_info-primary_artist', '.artist'
-            ]
-
-            for selector in artist_selectors:
-                artist_elem = soup.select_one(selector)
-                if artist_elem and artist_elem.get_text().strip():
-                    song_info['artista'] = artist_elem.get_text().strip()
-                    break
-
-            # Extraer álbum
-            album_selectors = [
-                '.album-title', '.song_album', '.header_with_cover_art-primary_info-secondary_info'
-            ]
-
-            for selector in album_selectors:
-                album_elem = soup.select_one(selector)
-                if album_elem and album_elem.get_text().strip():
-                    song_info['album'] = album_elem.get_text().strip()
-                    break
-
-            # Extraer géneros/tags
-            genre_selectors = [
-                '.genre-tag', '.song-genre', '.tag', '.genre',
-                '.header_with_cover_art-primary_info-secondary_info .metadata_unit'
-            ]
-
-            genre_elems = soup.select(', '.join(genre_selectors))
-            song_info['generos'] = [g.get_text().strip() for g in genre_elems if g.get_text().strip()]
-
-            # Extraer letra
-            lyrics_selectors = [
-                '.lyrics', '.song-lyrics', '.lyrics-container',
-                '[data-lyrics-container]', '.song_body-lyrics'
-            ]
-
-            for selector in lyrics_selectors:
-                lyrics_elem = soup.select_one(selector)
-                if lyrics_elem and lyrics_elem.get_text().strip():
-                    song_info['letra'] = lyrics_elem.get_text().strip()
-                    break
-
+            # Obtener el HTML como string
+            html = str(soup)
+            
+            # Usar el FactoryScraper para extraer datos
+            datos_extraidos = FactoryScraper.scrape(html, url)
+            
+            # Normalizar estructura
+            song_info = {
+                'url': url,
+                'titulo': datos_extraidos.get('titulo', ''),
+                'artista': datos_extraidos.get('artista', ''),
+                'album': datos_extraidos.get('album', ''),
+                'generos': datos_extraidos.get('generos', []),
+                'letra': datos_extraidos.get('letra', ''),
+                'tags': datos_extraidos.get('tags', []),
+                'metadatos': {},
+                'fecha_extraccion': time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            
             # Extraer metadatos adicionales de meta tags
             meta_tags = soup.select('meta[name], meta[property]')
             for meta in meta_tags:
