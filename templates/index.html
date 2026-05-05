@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buscador de Canciones</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 Buscador de Canciones</h1>
+        </header>
+
+        <div class="search-box">
+            <input 
+                type="text" 
+                id="searchInput" 
+                placeholder="Buscar por canción o artista..."
+                autocomplete="off"
+            >
+            <button id="searchBtn" onclick="buscarCanciones()">
+                🔍 Buscar
+            </button>
+        </div>
+
+        <div id="loadingIndicator" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Buscando canciones...</p>
+        </div>
+
+        <div id="resultsContainer" class="results-container"></div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
