@@ -32,6 +32,16 @@
         <div id="resultsContainer" class="results-container"></div>
     </div>
 
+    <div class="genius-panel">
+        <label class="genius-switch">
+            <input type="checkbox" id="searchGeniusCheckbox" onchange="toggleGeniusToken()">
+            Buscar en Genius
+        </label>
+        <div id="geniusTokenContainer" class="genius-token-container hidden">
+            <input id="geniusTokenInput" type="text" placeholder="Token de acceso Genius">
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

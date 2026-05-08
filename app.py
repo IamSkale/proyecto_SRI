@@ -36,6 +36,39 @@ def inicializar_indexador():
     set_indexador(indexador)
     print(f"✅ Sistema listo. Documentos indexados: {indexador.num_documentos}")
 
+
+def extraer_fragmento_letra(cancion_doc, query, max_antes=40, max_despues=80):
+    letra = cancion_doc.get('letra', '') or ''
+    if not letra or not query:
+        return ''
+
+    query_lower = query.lower().strip()
+    letra_lower = letra.lower()
+    pos = letra_lower.find(query_lower)
+
+    if pos == -1:
+        palabras_buscables = [palabra for palabra in query_lower.split() if len(palabra) > 3]
+        for palabra in palabras_buscables:
+            pos = letra_lower.find(palabra)
+            if pos != -1:
+                break
+
+    if pos != -1:
+        inicio = max(0, pos - max_antes)
+        fin = min(len(letra), pos + len(query_lower) + max_despues)
+        fragmento = letra[inicio:fin].replace('\n', ' ').strip()
+        if inicio > 0:
+            fragmento = '...' + fragmento
+        if fin < len(letra):
+            fragmento = fragmento + '...'
+        return fragmento
+
+    preview = letra.replace('\n', ' ').strip()
+    if len(preview) > 140:
+        return f"{preview[:140].strip()}..."
+    return preview
+
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -49,13 +82,19 @@ def buscar():
     
     data = request.json
     query = data.get('query', '').strip()
+    usar_genius = bool(data.get('usar_genius', False))
+    genius_token = data.get('genius_token', '').strip()
     
     if not query:
         return jsonify([])
     
     # Obtener resultados de búsqueda (tuples: doc_id, score, razones)
-    # Usa búsqueda avanzada con integración de Genius si hay pocos resultados
-    resultados_tuples = buscar_canciones_avanzado_con_web(query, min_score=20)
+    resultados_tuples = buscar_canciones_avanzado_con_web(
+        query,
+        min_score=20,
+        usar_genius=usar_genius,
+        genius_token=genius_token
+    )
     
     # Convertir a formato JSON con datos completos de canciones
     canciones = []
@@ -71,7 +110,8 @@ def buscar():
                 'tags': cancion_doc.get('tags', []),
                 'score': round(score, 2),
                 'año': 'N/A',
-                'duracion': 'N/A'
+                'duracion': 'N/A',
+                'snippet': extraer_fragmento_letra(cancion_doc, query)
             }
             canciones.append(cancion)
     

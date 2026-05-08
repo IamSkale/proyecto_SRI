@@ -256,13 +256,14 @@ def mostrar_detalle_completo(cancion_id, info_completa=None):
     print("=" * 60)
 
 
-def buscar_en_genius(query, max_intentos=3):
+def buscar_en_genius(query, max_intentos=3, genius_token=None):
     """
     Busca canciones en Genius.com usando su API y web scraping.
     
     Args:
         query (str): Término de búsqueda (artista y/o canción)
         max_intentos (int): Máximo número de canciones a buscar
+        genius_token (str|None): Token de acceso de Genius para la API oficial
     
     Returns:
         list: Lista de canciones encontradas con estructura [titulo, artista, letra]
@@ -272,17 +273,21 @@ def buscar_en_genius(query, max_intentos=3):
     canciones_encontradas = []
     
     try:
-        # URL de búsqueda en Genius
-        url_search = "https://genius.com/api/search/multi"
-        params = {'q': query}
+        if genius_token:
+            url_search = "https://api.genius.com/search"
+            params = {'q': query}
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Authorization': f'Bearer {genius_token}'
+            }
+        else:
+            url_search = "https://genius.com/api/search/multi"
+            params = {'q': query}
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
         
         print(f"🔍 Buscando en Genius.com: {query}")
-        
-        # Headers para simular navegador
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
         response = requests.get(url_search, params=params, headers=headers, timeout=10)
         response.raise_for_status()
         
@@ -405,14 +410,16 @@ def agregar_canciones_encontradas(canciones_nuevas):
     return canciones_agregadas
 
 
-def buscar_canciones_avanzado_con_web(query, min_score=20):
+def buscar_canciones_avanzado_con_web(query, min_score=20, usar_genius=False, genius_token=None):
     """
     Búsqueda avanzada que integra búsqueda local y web.
-    Si encuentra menos de 5 resultados locales, busca en Genius.
+    Si se activa la opción, busca en Genius cuando hay pocos resultados locales.
     
     Args:
         query (str): Término de búsqueda
         min_score (int): Puntuación mínima de relevancia
+        usar_genius (bool): Si se debe complementar con búsqueda en Genius
+        genius_token (str|None): Token de acceso de Genius para la API oficial
     
     Returns:
         list: Tuplas (doc_id, score, razones)
@@ -422,12 +429,10 @@ def buscar_canciones_avanzado_con_web(query, min_score=20):
     
     print(f"📊 Resultados locales: {len(resultados_locales)}")
     
-    # Si hay menos de 5 resultados, buscar en Genius
-    if len(resultados_locales) < 5:
+    if usar_genius and len(resultados_locales) < 5:
         print(f"🌐 Buscando en Genius.com para complementar resultados...")
-        
-        canciones_genius = buscar_en_genius(query, max_intentos=5 - len(resultados_locales))
-        
+        canciones_genius = buscar_en_genius(query, max_intentos=5 - len(resultados_locales), genius_token=genius_token)
+
         if canciones_genius:
             # Agregar las canciones encontradas a la base de datos
             agregadas = agregar_canciones_encontradas(canciones_genius)
@@ -442,5 +447,7 @@ def buscar_canciones_avanzado_con_web(query, min_score=20):
                     resultados_locales = buscar_canciones_avanzado(query, min_score)
                 except Exception as e:
                     print(f"⚠️  Error re-procesando documentos: {e}")
+
+    return resultados_locales
     
     return resultados_locales

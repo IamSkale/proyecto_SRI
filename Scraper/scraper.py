@@ -430,12 +430,7 @@ class FactoryScraper:
     """Factory para obtener el scraper correcto según el dominio."""
 
     scrapers = {
-        'genius.com': GeniusScraper(),
         'azlyrics.com': AZLyricsScraper(),
-        'musixmatch.com': MusixmatchScraper(),
-        'last.fm': LastFMScraper(),
-        'musicbrainz.org': MusicBrainzScraper(),
-        'allmusic.com': AllMusicScraper(),
     }
 
     scraper_generico = ScrapeadorGeneral()

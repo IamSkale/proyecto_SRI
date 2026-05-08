@@ -15,12 +15,9 @@ from Crawler.crawler import MusicCrawler
 def main():
     """Ejecutar el crawler con configuración predefinida."""
     
-    # URLs semilla para diferentes sitios musicales confiables
+    # URL semilla para azlyrics.com, que permite crawling limitado
     seed_urls = [
-        "https://www.azlyrics.com/",  # Permite crawling limitado
-        # Agregar más URLs después de verificar robots.txt
-        # "https://genius.com/",
-        # "https://www.lyrics.com/",
+        "https://www.azlyrics.com/",
     ]
 
     # Configuración del crawler

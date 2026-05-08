@@ -260,9 +260,7 @@ class MusicCrawler:
             bool: True si es un dominio confiable
         """
         trusted_domains = [
-            'genius.com', 'lyrics.com', 'azlyrics.com', 'musixmatch.com',
-            'songlyrics.com', 'metrolyrics.com', 'lyricsmode.com',
-            'musicbrainz.org', 'last.fm', 'allmusic.com'
+            'azlyrics.com'
         ]
 
         try:

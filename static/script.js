@@ -7,6 +7,9 @@ async function buscarCanciones() {
         return;
     }
     
+    const usarGenius = document.getElementById('searchGeniusCheckbox').checked;
+    const geniusToken = usarGenius ? document.getElementById('geniusTokenInput').value.trim() : '';
+
     // Limpiar resultados anteriores y mostrar loading
     const container = document.getElementById('resultsContainer');
     container.innerHTML = '';
@@ -18,7 +21,7 @@ async function buscarCanciones() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ query: query })
+            body: JSON.stringify({ query: query, usar_genius: usarGenius, genius_token: geniusToken })
         });
         
         if (!response.ok) {
@@ -61,12 +64,6 @@ function mostrarResultados(canciones) {
                 <div class="song-detail">
                     <strong>💿 Álbum:</strong> ${escapeHtml(cancion.album || 'N/A')}
                 </div>
-                <div class="song-detail">
-                    <strong>📅 Año:</strong> ${cancion.año || 'N/A'}
-                </div>
-                <div class="song-detail">
-                    <strong>⏱️ Duración:</strong> ${cancion.duracion || 'N/A'}
-                </div>
                 ${cancion.generos && cancion.generos.length > 0 ? `
                 <div class="song-detail">
                     <strong>🏷️ Géneros:</strong> ${escapeHtml(cancion.generos.join(', '))}
@@ -77,9 +74,11 @@ function mostrarResultados(canciones) {
                     <strong>🔖 Tags:</strong> ${escapeHtml(cancion.tags.join(', '))}
                 </div>
                 ` : ''}
+                ${cancion.snippet ? `
                 <div class="song-detail">
-                    <strong>📊 Relevancia:</strong> ${cancion.score}
+                    <strong>📝 Letra:</strong> ${escapeHtml(cancion.snippet)}
                 </div>
+                ` : ''}
             </div>
         </div>
     `).join('');
@@ -91,6 +90,16 @@ function mostrarLoading(mostrar) {
         loadingIndicator.classList.remove('hidden');
     } else {
         loadingIndicator.classList.add('hidden');
+    }
+}
+
+function toggleGeniusToken() {
+    const container = document.getElementById('geniusTokenContainer');
+    const checked = document.getElementById('searchGeniusCheckbox').checked;
+    if (checked) {
+        container.classList.remove('hidden');
+    } else {
+        container.classList.add('hidden');
     }
 }
 
