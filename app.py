@@ -1,9 +1,8 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-import json
 from pathlib import Path
 from Indexer.indexer import IndexadorTFIDF
-from Indexer.searcher import set_indexador, buscar_canciones_avanzado
+from Indexer.searcher import set_indexador, buscar_canciones_avanzado_con_web
 
 app = Flask(__name__)
 CORS(app)
@@ -55,7 +54,8 @@ def buscar():
         return jsonify([])
     
     # Obtener resultados de búsqueda (tuples: doc_id, score, razones)
-    resultados_tuples = buscar_canciones_avanzado(query, min_score=20)
+    # Usa búsqueda avanzada con integración de Genius si hay pocos resultados
+    resultados_tuples = buscar_canciones_avanzado_con_web(query, min_score=20)
     
     # Convertir a formato JSON con datos completos de canciones
     canciones = []
@@ -79,4 +79,4 @@ def buscar():
 
 if __name__ == '__main__':
     inicializar_indexador()
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5000)

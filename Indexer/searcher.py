@@ -1,7 +1,11 @@
 import re
 import math
+import requests
+import json
+import time
 from collections import Counter
 from difflib import SequenceMatcher
+from pathlib import Path
 
 # Variable global para el indexador
 _indexador_global = None
@@ -250,3 +254,193 @@ def mostrar_detalle_completo(cancion_id, info_completa=None):
     print("-" * 40)
     print(c.get('letra', 'No hay letra disponible'))
     print("=" * 60)
+
+
+def buscar_en_genius(query, max_intentos=3):
+    """
+    Busca canciones en Genius.com usando su API y web scraping.
+    
+    Args:
+        query (str): Término de búsqueda (artista y/o canción)
+        max_intentos (int): Máximo número de canciones a buscar
+    
+    Returns:
+        list: Lista de canciones encontradas con estructura [titulo, artista, letra]
+    """
+    global _indexador_global
+    
+    canciones_encontradas = []
+    
+    try:
+        # URL de búsqueda en Genius
+        url_search = "https://genius.com/api/search/multi"
+        params = {'q': query}
+        
+        print(f"🔍 Buscando en Genius.com: {query}")
+        
+        # Headers para simular navegador
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url_search, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        datos = response.json()
+        
+        # Procesar resultados de búsqueda
+        if 'response' in datos and 'hits' in datos['response']:
+            hits = datos['response']['hits'][:max_intentos]
+            
+            for hit in hits:
+                if 'result' in hit:
+                    resultado = hit['result']
+                    titulo = resultado.get('title', '')
+                    artista = resultado.get('primary_artist', {}).get('name', '')
+                    url_cancion = resultado.get('url', '')
+                    
+                    if titulo and artista and url_cancion:
+                        print(f"   📍 Encontrado: {titulo} - {artista}")
+                        
+                        # Intentar obtener la letra
+                        try:
+                            letra = _scrape_letra_genius(url_cancion)
+                        except:
+                            letra = f"[Letra disponible en {url_cancion}]"
+                        
+                        cancion_data = {
+                            'titulo': titulo,
+                            'artista': artista,
+                            'letra': letra,
+                            'album': resultado.get('album', {}).get('name', '') if resultado.get('album') else '',
+                            'generos': [],
+                            'tags': ['genius', 'web-scraping'],
+                            'url': url_cancion
+                        }
+                        
+                        canciones_encontradas.append(cancion_data)
+                        
+                        # Pequeño delay para no sobrecargar Genius
+                        time.sleep(0.5)
+    
+    except Exception as e:
+        print(f"⚠️  Error buscando en Genius: {e}")
+    
+    return canciones_encontradas
+
+
+def _scrape_letra_genius(url):
+    """
+    Extrae la letra de una canción en Genius.
+    
+    Args:
+        url (str): URL de la canción en Genius
+    
+    Returns:
+        str: Letra de la canción
+    """
+    try:
+        from bs4 import BeautifulSoup
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Buscar contenedor de letras en Genius
+        lyrics_container = soup.find('div', {'data-lyrics-container': 'true'})
+        if lyrics_container:
+            lineas = []
+            for br in lyrics_container.find_all('br'):
+                br.replace_with('\n')
+            letra = lyrics_container.get_text()
+            return letra.strip()
+        
+        return "[Letra no disponible]"
+    
+    except Exception as e:
+        print(f"⚠️  Error extrayendo letra de Genius: {e}")
+        return "[Letra no disponible]"
+
+
+def agregar_canciones_encontradas(canciones_nuevas):
+    """
+    Agrega canciones encontradas a la base de datos local.
+    
+    Args:
+        canciones_nuevas (list): Lista de canciones a agregar
+    
+    Returns:
+        int: Número de canciones agregadas exitosamente
+    """
+    global _indexador_global
+    
+    if not _indexador_global:
+        print("❌ Indexador no inicializado")
+        return 0
+    
+    canciones_agregadas = 0
+    
+    for cancion in canciones_nuevas:
+        try:
+            # Agregar canción al indexador
+            _indexador_global.agregar_documento(cancion)
+            canciones_agregadas += 1
+            print(f"✅ Agregada: {cancion['titulo']} - {cancion['artista']}")
+        except Exception as e:
+            print(f"❌ Error agregando canción: {e}")
+    
+    # Guardar cambios en el índice
+    if canciones_agregadas > 0:
+        try:
+            _indexador_global.guardar_indice('indice_musica.json')
+            print(f"💾 Índice actualizado ({canciones_agregadas} canciones nuevas)")
+        except Exception as e:
+            print(f"⚠️  Error guardando índice: {e}")
+    
+    return canciones_agregadas
+
+
+def buscar_canciones_avanzado_con_web(query, min_score=20):
+    """
+    Búsqueda avanzada que integra búsqueda local y web.
+    Si encuentra menos de 5 resultados locales, busca en Genius.
+    
+    Args:
+        query (str): Término de búsqueda
+        min_score (int): Puntuación mínima de relevancia
+    
+    Returns:
+        list: Tuplas (doc_id, score, razones)
+    """
+    # Búsqueda local primero
+    resultados_locales = buscar_canciones_avanzado(query, min_score)
+    
+    print(f"📊 Resultados locales: {len(resultados_locales)}")
+    
+    # Si hay menos de 5 resultados, buscar en Genius
+    if len(resultados_locales) < 5:
+        print(f"🌐 Buscando en Genius.com para complementar resultados...")
+        
+        canciones_genius = buscar_en_genius(query, max_intentos=5 - len(resultados_locales))
+        
+        if canciones_genius:
+            # Agregar las canciones encontradas a la base de datos
+            agregadas = agregar_canciones_encontradas(canciones_genius)
+            
+            # Re-procesar documentos para actualizar el índice
+            if agregadas > 0:
+                try:
+                    _indexador_global.procesar_documentos()
+                    print(f"🔄 Documentos re-procesados")
+                    
+                    # Buscar nuevamente con los datos actualizados
+                    resultados_locales = buscar_canciones_avanzado(query, min_score)
+                except Exception as e:
+                    print(f"⚠️  Error re-procesando documentos: {e}")
+    
+    return resultados_locales

@@ -2,6 +2,7 @@ import csv
 import re
 import math
 import json
+import time
 from pathlib import Path
 from collections import defaultdict, Counter
 
@@ -403,6 +404,43 @@ class IndexadorTFIDF:
     
     def obtener_info_completa(self):
         return self.documentos
+    
+    def agregar_documento(self, cancion_data):
+        """
+        Agrega un nuevo documento a la base de datos indexada.
+        
+        Args:
+            cancion_data (dict): Diccionario con información de la canción
+                Debe contener: titulo, artista, letra, album, generos, tags
+        
+        Returns:
+            str: ID del documento agregado
+        """
+        # Generar ID único basado en titulo y artista
+        titulo = cancion_data.get('titulo', '').lower().replace(' ', '_')[:20]
+        artista = cancion_data.get('artista', '').lower().replace(' ', '_')[:15]
+        timestamp = int(time.time() * 1000) % 100000
+        doc_id = f"{titulo}_{artista}_{timestamp}"
+        
+        # Crear estructura del documento
+        documento = {
+            'id': doc_id,
+            'titulo': cancion_data.get('titulo', ''),
+            'artista': cancion_data.get('artista', ''),
+            'album': cancion_data.get('album', ''),
+            'generos': cancion_data.get('generos', []),
+            'tags': cancion_data.get('tags', []),
+            'letra': cancion_data.get('letra', ''),
+            'url': cancion_data.get('url', '')
+        }
+        
+        # Agregar a documentos
+        self.documentos[doc_id] = documento
+        self.num_documentos = len(self.documentos)
+        
+        print(f"✏️  Documento agregado: {doc_id}")
+        
+        return doc_id
     
     def guardar_indice(self, archivo_salida='indice_musica.pkl'):
         import json
