@@ -10,3 +10,5 @@ Indexer/__pycache__/indexer.cpython-314.pyc
 requirements_crawler.txt
 instrucciones.txt
 Database/crawled_data/crawler.log
+Database/crawled_data/crawled_songs_20260505_122432.json
+Database/crawled_data/crawled_songs_final.json
