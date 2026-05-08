@@ -372,6 +372,31 @@ def _scrape_letra_genius(url):
         return "[Letra no disponible]"
 
 
+def es_cancion_duplicada(cancion_data):
+    """
+    Comprueba si una canción ya existe en el índice local basado en título/artista o URL.
+    """
+    global _indexador_global
+    if not _indexador_global:
+        return False
+
+    titulo_nuevo = cancion_data.get('titulo', '').strip().lower()
+    artista_nuevo = cancion_data.get('artista', '').strip().lower()
+    url_nuevo = cancion_data.get('url', '').strip().lower()
+
+    for documento in _indexador_global.documentos.values():
+        titulo_existente = documento.get('titulo', '').strip().lower()
+        artista_existente = documento.get('artista', '').strip().lower()
+        url_existente = documento.get('url', '').strip().lower()
+
+        if url_nuevo and url_nuevo == url_existente:
+            return True
+        if titulo_nuevo and artista_nuevo and titulo_nuevo == titulo_existente and artista_nuevo == artista_existente:
+            return True
+
+    return False
+
+
 def agregar_canciones_encontradas(canciones_nuevas):
     """
     Agrega canciones encontradas a la base de datos local.
@@ -391,8 +416,11 @@ def agregar_canciones_encontradas(canciones_nuevas):
     canciones_agregadas = 0
     
     for cancion in canciones_nuevas:
+        if es_cancion_duplicada(cancion):
+            print(f"⚠️ Canción duplicada omitida: {cancion.get('titulo', 'UNKNOWN')} - {cancion.get('artista', 'UNKNOWN')}")
+            continue
+
         try:
-            # Agregar canción al indexador
             _indexador_global.agregar_documento(cancion)
             canciones_agregadas += 1
             print(f"✅ Agregada: {cancion['titulo']} - {cancion['artista']}")
@@ -434,19 +462,23 @@ def buscar_canciones_avanzado_con_web(query, min_score=20, usar_genius=False, ge
         canciones_genius = buscar_en_genius(query, max_intentos=5 - len(resultados_locales), genius_token=genius_token)
 
         if canciones_genius:
-            # Agregar las canciones encontradas a la base de datos
-            agregadas = agregar_canciones_encontradas(canciones_genius)
-            
-            # Re-procesar documentos para actualizar el índice
-            if agregadas > 0:
-                try:
-                    _indexador_global.procesar_documentos()
-                    print(f"🔄 Documentos re-procesados")
-                    
-                    # Buscar nuevamente con los datos actualizados
-                    resultados_locales = buscar_canciones_avanzado(query, min_score)
-                except Exception as e:
-                    print(f"⚠️  Error re-procesando documentos: {e}")
+            # Filtrar duplicados antes de agregar
+            canciones_unicas = [c for c in canciones_genius if not es_cancion_duplicada(c)]
+            if canciones_unicas:
+                agregadas = agregar_canciones_encontradas(canciones_unicas)
+                
+                # Re-procesar documentos para actualizar el índice
+                if agregadas > 0:
+                    try:
+                        _indexador_global.procesar_documentos()
+                        print(f"🔄 Documentos re-procesados")
+                        
+                        # Buscar nuevamente con los datos actualizados
+                        resultados_locales = buscar_canciones_avanzado(query, min_score)
+                    except Exception as e:
+                        print(f"⚠️  Error re-procesando documentos: {e}")
+            else:
+                print("⚠️ No se encontraron canciones nuevas para agregar desde Genius.")
 
     return resultados_locales
     
