@@ -91,7 +91,7 @@ def buscar():
     # Obtener resultados de búsqueda (tuples: doc_id, score, razones)
     resultados_tuples = buscar_canciones_avanzado_con_web(
         query,
-        min_score=20,
+        min_score=15,
         usar_genius=usar_genius,
         genius_token=genius_token
     )

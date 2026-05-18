@@ -40,7 +40,7 @@ def calcular_puntuacion_bm25(tokens_query, doc_tokens, doc_len, avg_doc_len, k1=
     return score
 
 
-def buscar_canciones_avanzado(query, min_score=20):
+def buscar_canciones_avanzado(query, min_score=15):
     global _indexador_global
     
     if not query.strip():
@@ -68,7 +68,7 @@ def buscar_canciones_avanzado(query, min_score=20):
         # 2. Similitud en artista
         similitud_artista = calcular_similitud_textual(query, cancion['artista'])
         if similitud_artista > 0.3:
-            puntuacion += similitud_artista * 3.0
+            puntuacion += similitud_artista * 5.0
             razones.append(f"artista ({similitud_artista:.2f})")
         
         # 3. Búsqueda por palabras clave en título y artista
@@ -83,7 +83,7 @@ def buscar_canciones_avanzado(query, min_score=20):
             puntuacion += coincidencias_titulo * 2.0
             razones.append(f"{coincidencias_titulo} palabras en título")
         if coincidencias_artista > 0:
-            puntuacion += coincidencias_artista * 1.0
+            puntuacion += coincidencias_artista * 2.0
             razones.append(f"{coincidencias_artista} palabras en artista")
         
         # 4. Búsqueda en letra usando BM25 (parte del método híbrido)
@@ -103,8 +103,12 @@ def buscar_canciones_avanzado(query, min_score=20):
             puntuacion += 8.0
             razones.append("frase exacta en título")
         elif query in cancion['artista'].lower():
-            puntuacion += 4.0
+            puntuacion += 8.0
             razones.append("frase exacta en artista")
+
+        if query == cancion['artista'].lower() and cancion['artista'].strip():
+            puntuacion += 5.0
+            razones.append("artista completo")
         
         # 6. Bonus por palabras iniciales
         palabras_query_lista = query.split()
@@ -123,12 +127,12 @@ def buscar_canciones_avanzado(query, min_score=20):
     
     return resultados
 
-def buscar_canciones(query, info_completa=None, min_score=20):
+def buscar_canciones(query, info_completa=None, min_score=15):
     resultados = buscar_canciones_avanzado(query, info_completa, min_score)
     return [doc_id for doc_id, score, razones in resultados]
 
 
-def mostrar_resultados(ids=None, info_completa=None, query=None, min_score=20):
+def mostrar_resultados(ids=None, info_completa=None, query=None, min_score=15):
     global _indexador_global
     
     # Si no se pasaron IDs y hay query, buscar con método híbrido
@@ -405,15 +409,16 @@ def agregar_canciones_encontradas(canciones_nuevas):
         canciones_nuevas (list): Lista de canciones a agregar
     
     Returns:
-        int: Número de canciones agregadas exitosamente
+        tuple: (número de canciones agregadas, lista de IDs agregados)
     """
     global _indexador_global
     
     if not _indexador_global:
         print("❌ Indexador no inicializado")
-        return 0
+        return 0, []
     
     canciones_agregadas = 0
+    ids_nuevos = []
     
     for cancion in canciones_nuevas:
         if es_cancion_duplicada(cancion):
@@ -421,24 +426,17 @@ def agregar_canciones_encontradas(canciones_nuevas):
             continue
 
         try:
-            _indexador_global.agregar_documento(cancion)
+            doc_id = _indexador_global.agregar_documento(cancion)
+            ids_nuevos.append(doc_id)
             canciones_agregadas += 1
             print(f"✅ Agregada: {cancion['titulo']} - {cancion['artista']}")
         except Exception as e:
             print(f"❌ Error agregando canción: {e}")
     
-    # Guardar cambios en el índice
-    if canciones_agregadas > 0:
-        try:
-            _indexador_global.guardar_indice('indice_musica.json')
-            print(f"💾 Índice actualizado ({canciones_agregadas} canciones nuevas)")
-        except Exception as e:
-            print(f"⚠️  Error guardando índice: {e}")
-    
-    return canciones_agregadas
+    return canciones_agregadas, ids_nuevos
 
 
-def buscar_canciones_avanzado_con_web(query, min_score=20, usar_genius=False, genius_token=None):
+def buscar_canciones_avanzado_con_web(query, min_score=15, usar_genius=False, genius_token=None):
     """
     Búsqueda avanzada que integra búsqueda local y web.
     Si se activa la opción, busca en Genius cuando hay pocos resultados locales.
@@ -465,21 +463,22 @@ def buscar_canciones_avanzado_con_web(query, min_score=20, usar_genius=False, ge
             # Filtrar duplicados antes de agregar
             canciones_unicas = [c for c in canciones_genius if not es_cancion_duplicada(c)]
             if canciones_unicas:
-                agregadas = agregar_canciones_encontradas(canciones_unicas)
+                agregadas, ids_nuevos = agregar_canciones_encontradas(canciones_unicas)
                 
-                # Re-procesar documentos para actualizar el índice
-                if agregadas > 0:
+                # Procesar SOLO los nuevos documentos para mayor eficiencia
+                if agregadas > 0 and ids_nuevos:
                     try:
-                        _indexador_global.procesar_documentos()
-                        print(f"🔄 Documentos re-procesados")
+                        print(f"🔄 Re-vectorizando {agregadas} documentos nuevos...")
+                        _indexador_global.procesar_documentos_incrementales(ids_nuevos)
+                        _indexador_global.guardar_indice('indice_musica.json')  # Guardar cambios
+                        print(f"✅ Documentos re-vectorizados y guardados")
                         
                         # Buscar nuevamente con los datos actualizados
                         resultados_locales = buscar_canciones_avanzado(query, min_score)
+                        print(f"📊 Resultados después de Genius: {len(resultados_locales)}")
                     except Exception as e:
                         print(f"⚠️  Error re-procesando documentos: {e}")
             else:
                 print("⚠️ No se encontraron canciones nuevas para agregar desde Genius.")
 
-    return resultados_locales
-    
     return resultados_locales

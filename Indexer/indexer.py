@@ -360,6 +360,12 @@ class IndexadorTFIDF:
     def procesar_documentos(self):
         print("\n🔧 Procesando documentos (esto puede tomar un momento)...")
         
+        # Limpiar índices anteriores para reconstruir desde cero
+        self.indice_invertido = defaultdict(list)
+        self.frecuencia_documentos = defaultdict(int)
+        self.idf = {}
+        self.vocabulario = set()
+        
         tf_documentos = {}
         
         for doc_id, doc in self.documentos.items():
@@ -398,6 +404,53 @@ class IndexadorTFIDF:
         
         print(f"  ✅ Vocabulario: {len(self.vocabulario)} términos únicos")
         print(f"  ✅ Documentos procesados: {self.num_documentos}")
+    
+    def procesar_documentos_incrementales(self, nuevos_doc_ids):
+        """
+        Procesa solo los nuevos documentos agregados sin recalcular todo desde cero.
+        Mucho más eficiente que procesar_documentos() cuando solo se agregan algunos documentos.
+        
+        Args:
+            nuevos_doc_ids (list): IDs de los nuevos documentos a procesar
+        """
+        print(f"\n🔧 Procesando {len(nuevos_doc_ids)} documentos nuevos (incrementalmente)...")
+        
+        for doc_id in nuevos_doc_ids:
+            if doc_id not in self.documentos:
+                continue
+                
+            doc = self.documentos[doc_id]
+            
+            # Crear texto completo
+            texto_completo = f"{doc['titulo']} {doc['artista']} {doc['letra']}"
+            if doc.get('generos'):
+                texto_completo += " " + " ".join(doc['generos'])
+            if doc.get('tags'):
+                texto_completo += " " + " ".join(doc['tags'])
+            
+            # Detectar idioma del documento
+            idioma = self.procesador.detectar_idioma(texto_completo)
+            self.idiomas_documentos[doc_id] = idioma
+            
+            # Limpiar y tokenizar
+            tokens = self.procesador.limpiar_texto(texto_completo, idioma)
+            
+            # Calcular TF
+            tf = Counter(tokens)
+            
+            # Actualizar índice invertido
+            for termino, freq in tf.items():
+                self.indice_invertido[termino].append((doc_id, freq))
+                self.vocabulario.add(termino)
+        
+        # Recalcular DF e IDF para todos los términos (afectados por nuevos docs)
+        print("📊 Recalculando IDF...")
+        for termino in self.vocabulario:
+            self.frecuencia_documentos[termino] = len(self.indice_invertido[termino])
+            self.idf[termino] = math.log(self.num_documentos / (self.frecuencia_documentos[termino] + 1))
+        
+        print(f"  ✅ {len(nuevos_doc_ids)} documentos nuevos procesados")
+        print(f"  ✅ Vocabulario total: {len(self.vocabulario)} términos únicos")
     
     def obtener_documento(self, doc_id):
         return self.documentos.get(doc_id)
