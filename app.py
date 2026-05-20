@@ -56,17 +56,14 @@ def extraer_fragmento_letra(cancion_doc, query, max_antes=40, max_despues=80):
     if pos != -1:
         inicio = max(0, pos - max_antes)
         fin = min(len(letra), pos + len(query_lower) + max_despues)
-        fragmento = letra[inicio:fin].replace('\n', ' ').strip()
+        fragmento = letra[inicio:fin].strip()
         if inicio > 0:
             fragmento = '...' + fragmento
         if fin < len(letra):
             fragmento = fragmento + '...'
         return fragmento
 
-    preview = letra.replace('\n', ' ').strip()
-    if len(preview) > 140:
-        return f"{preview[:140].strip()}..."
-    return preview
+    preview = letra.strip()
 
 
 @app.route('/')

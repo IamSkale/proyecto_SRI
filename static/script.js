@@ -76,12 +76,17 @@ function mostrarResultados(canciones) {
                 ` : ''}
                 ${cancion.snippet ? `
                 <div class="song-detail">
-                    <strong>📝 Letra:</strong> ${escapeHtml(cancion.snippet)}
+                    <strong>📝 Letra:</strong>
+                    <div class="lyrics">${formatLyrics(cancion.snippet)}</div>
                 </div>
                 ` : ''}
             </div>
         </div>
     `).join('');
+}
+
+function formatLyrics(text) {
+    return escapeHtml(text).replace(/\n/g, '<br>');
 }
 
 function mostrarLoading(mostrar) {

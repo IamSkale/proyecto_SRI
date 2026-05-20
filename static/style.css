@@ -161,13 +161,20 @@ header p {
 }
 
 .song-card.expanded .song-details {
-    max-height: 200px;
+    max-height: 600px;
+    overflow-y: auto;
 }
 
 .song-detail {
     color: #666;
     font-size: 0.9rem;
     margin: 5px 0;
+}
+
+.lyrics {
+    white-space: pre-wrap;
+    margin-top: 8px;
+    line-height: 1.4;
 }
 
 .song-detail strong {
