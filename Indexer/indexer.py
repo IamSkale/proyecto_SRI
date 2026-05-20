@@ -2,6 +2,7 @@ import csv
 import re
 import math
 import json
+import pickle
 import time
 from pathlib import Path
 from collections import defaultdict, Counter
@@ -553,8 +554,7 @@ class IndexadorTFIDF:
         
         return doc_id
     
-    def guardar_indice(self, archivo_salida='indice_musica.pkl'):
-        import json
+    def guardar_indice(self, archivo_salida='indice_musica.json'):
         print(f"\n💾 Guardando índice en {archivo_salida}...")
         
         datos = {
@@ -564,14 +564,60 @@ class IndexadorTFIDF:
             'idf': self.idf,
             'vocabulario': list(self.vocabulario),
             'num_documentos': self.num_documentos,
-            'idiomas_documentos': self.idiomas_documentos
+            'idiomas_documentos': self.idiomas_documentos,
+            'document_ids_order': self.document_ids_order
         }
         
         with open(archivo_salida, 'w', encoding='utf-8') as f:
             json.dump(datos, f, ensure_ascii=False, indent=2)
+
+        self.guardar_embeddings(archivo_salida)
         
         print(f"  ✅ Índice guardado")
     
+    def guardar_embeddings(self, archivo_salida='indice_musica.json'):
+        if self.vectorizer is None or self.document_embeddings is None or not self.document_ids_order:
+            print("⚠️  No hay embeddings semánticos para guardar.")
+            return
+
+        base_path = Path(archivo_salida).with_suffix('')
+        vectorizer_path = base_path.with_suffix('.vectorizer.pkl')
+        svd_path = base_path.with_suffix('.svd.pkl')
+        embeddings_path = base_path.with_suffix('.embeddings.npz')
+
+        with open(vectorizer_path, 'wb') as f:
+            pickle.dump(self.vectorizer, f)
+        with open(svd_path, 'wb') as f:
+            pickle.dump(self.svd, f)
+        np.savez_compressed(embeddings_path, embeddings=self.document_embeddings)
+
+        print(f"  ✅ Embeddings guardados en disco: {vectorizer_path.name}, {svd_path.name}, {embeddings_path.name}")
+
+    def cargar_embeddings(self, archivo='indice_musica.json'):
+        base_path = Path(archivo).with_suffix('')
+        vectorizer_path = base_path.with_suffix('.vectorizer.pkl')
+        svd_path = base_path.with_suffix('.svd.pkl')
+        embeddings_path = base_path.with_suffix('.embeddings.npz')
+
+        if not vectorizer_path.exists() or not svd_path.exists() or not embeddings_path.exists():
+            return False
+
+        try:
+            with open(vectorizer_path, 'rb') as f:
+                self.vectorizer = pickle.load(f)
+            with open(svd_path, 'rb') as f:
+                self.svd = pickle.load(f)
+            data = np.load(embeddings_path)
+            self.document_embeddings = normalize(data['embeddings'])
+            return True
+        except Exception as e:
+            print(f"⚠️ Error cargando embeddings: {e}")
+            self.vectorizer = None
+            self.svd = None
+            self.document_embeddings = None
+            self.document_ids_order = []
+            return False
+
     def cargar_indice(self, archivo='indice_musica.json'):
         print(f"📂 Cargando índice desde {archivo}...")
         
@@ -585,10 +631,16 @@ class IndexadorTFIDF:
         self.vocabulario = set(datos['vocabulario'])
         self.num_documentos = datos['num_documentos']
         self.idiomas_documentos = datos.get('idiomas_documentos', {})
+        self.document_ids_order = datos.get('document_ids_order', list(self.documentos.keys()))
         
-        print(f"  ✅ Índice cargado: {self.num_documentos} documentos, {len(self.vocabulario)} términos")
+        if self.cargar_embeddings(archivo):
+            print(f"  ✅ Índice cargado con embeddings desde disco: {archivo}")
+        else:
+            print("  ⚠️ No se encontraron embeddings en disco, reconstruyendo...")
+            self.construir_indice_semantico()
+            self.guardar_embeddings(archivo)
 
-        self.construir_indice_semantico()
+        print(f"  ✅ Índice cargado: {self.num_documentos} documentos, {len(self.vocabulario)} términos")
     
     def ejecutar_indexacion(self, archivo_salida='indice_musica.json'):
         print("\n" + "="*60)

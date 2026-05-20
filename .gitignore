@@ -12,3 +12,7 @@ instrucciones.txt
 Database/crawled_data/crawler.log
 Database/crawled_data/crawled_songs_20260505_122432.json
 Database/crawled_data/crawled_songs_final.json
+indice_musica.vectorizer.pkl
+.gitignore
+indice_musica.embeddings.npz
+indice_musica.svd.pkl
