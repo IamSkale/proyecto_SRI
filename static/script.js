@@ -52,15 +52,15 @@ function mostrarResultados(canciones) {
     }
     
     container.innerHTML = canciones.map((cancion, index) => `
-        <div class="song-card" onclick="toggleSongDetails(${index})">
-            <div class="song-header">
+        <div class="song-card">
+            <div class="song-header" onclick="toggleSongDetails(${index})">
                 <div>
                     <h3 class="song-title">${escapeHtml(cancion.titulo)}</h3>
                     <p class="song-artist">${escapeHtml(cancion.artista)}</p>
                 </div>
                 <span class="song-toggle">▼</span>
             </div>
-            <div class="song-details" id="details-${index}">
+            <div class="song-metadata">
                 <div class="song-detail">
                     <strong>💿 Álbum:</strong> ${escapeHtml(cancion.album || 'N/A')}
                 </div>
@@ -75,11 +75,23 @@ function mostrarResultados(canciones) {
                 </div>
                 ` : ''}
                 ${cancion.snippet ? `
-                <div class="song-detail">
-                    <strong>📝 Letra:</strong>
+                <div class="song-detail song-snippet">
+                    <strong>📝 Vista previa:</strong>
                     <div class="lyrics">${formatLyrics(cancion.snippet)}</div>
                 </div>
                 ` : ''}
+            </div>
+            <div class="song-lyrics" id="lyrics-${index}">
+                ${cancion.letra ? `
+                <div class="song-detail">
+                    <strong>📝 Letra completa:</strong>
+                    <div class="lyrics">${formatLyrics(cancion.letra)}</div>
+                </div>
+                ` : `
+                <div class="song-detail no-lyrics">
+                    <em>No hay letra completa disponible.</em>
+                </div>
+                `}
             </div>
         </div>
     `).join('');
@@ -87,6 +99,16 @@ function mostrarResultados(canciones) {
 
 function formatLyrics(text) {
     return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+function toggleSongDetails(index) {
+    const card = document.querySelectorAll('.song-card')[index];
+    const lyrics = document.getElementById(`lyrics-${index}`);
+
+    card.classList.toggle('expanded');
+    if (lyrics) {
+        lyrics.classList.toggle('visible');
+    }
 }
 
 function mostrarLoading(mostrar) {
@@ -118,13 +140,6 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
-}
-
-function toggleSongDetails(index) {
-    const card = document.querySelectorAll('.song-card')[index];
-    const details = document.getElementById(`details-${index}`);
-    
-    card.classList.toggle('expanded');
 }
 
 // Permitir buscar con Enter

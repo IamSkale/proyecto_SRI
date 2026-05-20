@@ -6,6 +6,11 @@ import time
 from pathlib import Path
 from collections import defaultdict, Counter
 
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import TruncatedSVD
+from sklearn.preprocessing import normalize
+
 class ProcesadorTexto:    
     def __init__(self):
         # Stopwords por idioma
@@ -267,6 +272,10 @@ class IndexadorTFIDF:
         self.idf = {}
         self.vocabulario = set()
         self.idiomas_documentos = {}
+        self.document_ids_order = []
+        self.vectorizer = None
+        self.svd = None
+        self.document_embeddings = None
         
         self.num_documentos = 0
     
@@ -404,7 +413,53 @@ class IndexadorTFIDF:
         
         print(f"  ✅ Vocabulario: {len(self.vocabulario)} términos únicos")
         print(f"  ✅ Documentos procesados: {self.num_documentos}")
-    
+
+        # Construir índice semántico sobre los documentos procesados
+        self.construir_indice_semantico()
+
+    def _texto_semantico_doc(self, doc):
+        partes = [doc.get('titulo', ''), doc.get('artista', ''), doc.get('album', '')]
+        if doc.get('generos'):
+            partes.append(' '.join(doc['generos']))
+        if doc.get('tags'):
+            partes.append(' '.join(doc['tags']))
+        partes.append(doc.get('letra', ''))
+        return ' '.join([p for p in partes if p]).strip()
+
+    def construir_indice_semantico(self, n_components=128, max_features=5000):
+        if not self.documentos:
+            self.document_embeddings = None
+            self.document_ids_order = []
+            return
+
+        self.document_ids_order = list(self.documentos.keys())
+        documentos_texto = [self._texto_semantico_doc(self.documentos[doc_id]) for doc_id in self.document_ids_order]
+
+        self.vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2), analyzer='word')
+        X = self.vectorizer.fit_transform(documentos_texto)
+
+        n_components = min(n_components, X.shape[1] - 1, X.shape[0] - 1)
+        if n_components < 1:
+            self.svd = None
+            self.document_embeddings = normalize(X.toarray())
+            return
+
+        self.svd = TruncatedSVD(n_components=n_components, random_state=42)
+        X_reduced = self.svd.fit_transform(X)
+        self.document_embeddings = normalize(X_reduced)
+
+    def obtener_embedding(self, texto):
+        if not texto or self.vectorizer is None:
+            return None
+
+        X = self.vectorizer.transform([texto])
+        if self.svd is not None:
+            vector = self.svd.transform(X)
+        else:
+            vector = X.toarray()
+
+        return normalize(vector)[0]
+
     def procesar_documentos_incrementales(self, nuevos_doc_ids):
         """
         Procesa solo los nuevos documentos agregados sin recalcular todo desde cero.
@@ -451,6 +506,9 @@ class IndexadorTFIDF:
         
         print(f"  ✅ {len(nuevos_doc_ids)} documentos nuevos procesados")
         print(f"  ✅ Vocabulario total: {len(self.vocabulario)} términos únicos")
+
+        # Reconstruir embeddings semánticos para incluir los nuevos documentos
+        self.construir_indice_semantico()
     
     def obtener_documento(self, doc_id):
         return self.documentos.get(doc_id)
@@ -529,6 +587,8 @@ class IndexadorTFIDF:
         self.idiomas_documentos = datos.get('idiomas_documentos', {})
         
         print(f"  ✅ Índice cargado: {self.num_documentos} documentos, {len(self.vocabulario)} términos")
+
+        self.construir_indice_semantico()
     
     def ejecutar_indexacion(self, archivo_salida='indice_musica.json'):
         print("\n" + "="*60)

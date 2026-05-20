@@ -151,18 +151,31 @@ header p {
     transform: rotate(180deg);
 }
 
-.song-details {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.3s ease-out;
+.song-card.expanded .song-snippet {
+    display: none;
+}
+
+.song-metadata {
     margin-top: 15px;
     padding-top: 15px;
     border-top: 1px solid #eee;
 }
 
-.song-card.expanded .song-details {
-    max-height: 600px;
-    overflow-y: auto;
+.song-lyrics {
+    display: none;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease-out, opacity 0.3s ease-out;
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px dashed #eee;
+    opacity: 0;
+}
+
+.song-lyrics.visible {
+    display: block;
+    max-height: 1000px;
+    opacity: 1;
 }
 
 .song-detail {

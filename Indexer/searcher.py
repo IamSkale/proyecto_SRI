@@ -3,6 +3,8 @@ import math
 import requests
 import json
 import time
+
+import numpy as np
 from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -50,11 +52,18 @@ def buscar_canciones_avanzado(query, min_score=15):
     resultados = []
     
     # Calcular longitud promedio de documentos para BM25
+    semantic_scores = {}
     if _indexador_global:
         doc_lengths = [len(doc['letra'].split()) + len(doc['titulo'].split()) + len(doc['artista'].split()) 
                        for doc in _indexador_global.documentos.values()]
         avg_doc_len = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 100
-    
+
+        if getattr(_indexador_global, 'document_embeddings', None) is not None:
+            query_vec = _indexador_global.obtener_embedding(query)
+            if query_vec is not None:
+                for idx, doc_id in enumerate(_indexador_global.document_ids_order or _indexador_global.documentos.keys()):
+                    if idx < len(_indexador_global.document_embeddings):
+                        semantic_scores[doc_id] = float(np.dot(_indexador_global.document_embeddings[idx], query_vec))
     for doc_id, cancion in (_indexador_global.documentos.items() if _indexador_global else info_completa.items()):
         puntuacion = 0
         razones = []
@@ -97,6 +106,13 @@ def buscar_canciones_avanzado(query, min_score=15):
             puntuacion += puntuacion_bm25 * 1.5
             if puntuacion_bm25 > 0:
                 razones.append(f"BM25 ({puntuacion_bm25:.3f})")
+
+            # 4.1. Similaridad semántica con embeddings locales
+            sem_sim = semantic_scores.get(doc_id, 0.0)
+            if sem_sim > 0:
+                puntuacion += sem_sim * 4.0
+                if sem_sim > 0.05:
+                    razones.append(f"semántica ({sem_sim:.2f})")
         
         # 5. Bonus por coincidencia exacta de frase
         if query in cancion['titulo'].lower():

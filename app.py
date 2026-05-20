@@ -108,7 +108,8 @@ def buscar():
                 'score': round(score, 2),
                 'año': 'N/A',
                 'duracion': 'N/A',
-                'snippet': extraer_fragmento_letra(cancion_doc, query)
+                'snippet': extraer_fragmento_letra(cancion_doc, query),
+                'letra': cancion_doc.get('letra', '')
             }
             canciones.append(cancion)
     
