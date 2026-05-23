@@ -276,13 +276,13 @@ def mostrar_detalle_completo(cancion_id, info_completa=None):
     print("=" * 60)
 
 
-def buscar_en_genius(query, max_intentos=3, genius_token=None):
+def buscar_en_genius(query, max_intentos=10, genius_token=None):
     """
     Busca canciones en Genius.com usando su API y web scraping.
     
     Args:
         query (str): Término de búsqueda (artista y/o canción)
-        max_intentos (int): Máximo número de canciones a buscar
+        max_intentos (int): Máximo número de canciones a buscar (defecto: 10)
         genius_token (str|None): Token de acceso de Genius para la API oficial
     
     Returns:
@@ -473,7 +473,7 @@ def buscar_canciones_avanzado_con_web(query, min_score=15, usar_genius=False, ge
     
     if usar_genius and len(resultados_locales) < 5:
         print(f"🌐 Buscando en Genius.com para complementar resultados...")
-        canciones_genius = buscar_en_genius(query, max_intentos=5 - len(resultados_locales), genius_token=genius_token)
+        canciones_genius = buscar_en_genius(query, max_intentos=10 - len(resultados_locales), genius_token=genius_token)
 
         if canciones_genius:
             # Filtrar duplicados antes de agregar

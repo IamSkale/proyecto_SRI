@@ -12,6 +12,13 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
 from sklearn.preprocessing import normalize
 
+# Intentar importar sentence-transformers (opcional)
+try:
+    from sentence_transformers import SentenceTransformer
+    _HAS_SENTENCE_TRANSFORMERS = True
+except Exception:
+    SentenceTransformer = None
+    _HAS_SENTENCE_TRANSFORMERS = False
 class ProcesadorTexto:    
     def __init__(self):
         # Stopwords por idioma
@@ -277,6 +284,10 @@ class IndexadorTFIDF:
         self.vectorizer = None
         self.svd = None
         self.document_embeddings = None
+        # Sentence-transformers model and metadata (opcional)
+        self.st_model = None
+        self.st_model_name = None
+        self.use_sentence_transformer = _HAS_SENTENCE_TRANSFORMERS
         
         self.num_documentos = 0
     
@@ -428,6 +439,13 @@ class IndexadorTFIDF:
         return ' '.join([p for p in partes if p]).strip()
 
     def construir_indice_semantico(self, n_components=128, max_features=5000):
+        return self.construir_indice_semantico_with_options(n_components=n_components, max_features=max_features)
+
+
+    def construir_indice_semantico_with_options(self, n_components=128, max_features=5000, use_sentence_transformer=None, batch_size=64):
+        if use_sentence_transformer is None:
+            use_sentence_transformer = self.use_sentence_transformer
+
         if not self.documentos:
             self.document_embeddings = None
             self.document_ids_order = []
@@ -436,6 +454,24 @@ class IndexadorTFIDF:
         self.document_ids_order = list(self.documentos.keys())
         documentos_texto = [self._texto_semantico_doc(self.documentos[doc_id]) for doc_id in self.document_ids_order]
 
+        # Si está disponible y se solicita, usar sentence-transformers para embeddings densos
+        if use_sentence_transformer and _HAS_SENTENCE_TRANSFORMERS:
+            model_name = 'all-MiniLM-L6-v2'
+            try:
+                if self.st_model is None or self.st_model_name != model_name:
+                    self.st_model = SentenceTransformer(model_name)
+                    self.st_model_name = model_name
+
+                # computar embeddings en batch (con batch_size configurable)
+                print(f"  🔄 Codificando {len(documentos_texto)} documentos con batch_size={batch_size}...")
+                embeddings = self.st_model.encode(documentos_texto, batch_size=batch_size, show_progress_bar=False, convert_to_numpy=True)
+                self.document_embeddings = normalize(embeddings)
+                # No dependemos de TF-IDF vectorizer/SVD en este camino, pero las guardamos si existen
+                return
+            except Exception as e:
+                print(f"⚠️ Error al usar sentence-transformers ({e}), volviendo a TF-IDF: ")
+
+        # Método por defecto: TF-IDF + SVD
         self.vectorizer = TfidfVectorizer(max_features=max_features, ngram_range=(1, 2), analyzer='word')
         X = self.vectorizer.fit_transform(documentos_texto)
 
@@ -450,7 +486,18 @@ class IndexadorTFIDF:
         self.document_embeddings = normalize(X_reduced)
 
     def obtener_embedding(self, texto):
-        if not texto or self.vectorizer is None:
+        if not texto:
+            return None
+
+        # Si tenemos un modelo sentence-transformers cargado, usarlo para consultas
+        if self.st_model is not None:
+            try:
+                emb = self.st_model.encode([texto], convert_to_numpy=True)
+                return normalize(emb)[0]
+            except Exception:
+                pass
+
+        if self.vectorizer is None:
             return None
 
         X = self.vectorizer.transform([texto])
@@ -461,10 +508,61 @@ class IndexadorTFIDF:
 
         return normalize(vector)[0]
 
+    def agregar_embeddings_incrementales(self, nuevos_doc_ids):
+        """
+        Agrega embeddings solo para documentos nuevos sin recalcular todo el corpus.
+        Mucho más eficiente que reconstruir embeddings cuando solo se agregan pocos documentos.
+        
+        Args:
+            nuevos_doc_ids (list): IDs de los nuevos documentos a procesar
+        """
+        if not nuevos_doc_ids or not self.document_embeddings is None and len(self.document_embeddings) == 0:
+            return
+        
+        print(f"\n🧠 Generando embeddings para {len(nuevos_doc_ids)} documentos nuevos (incremental)...")
+        
+        # Obtener textos solo de documentos nuevos
+        nuevos_textos = []
+        nuevos_ids_validos = []
+        
+        for doc_id in nuevos_doc_ids:
+            if doc_id not in self.documentos:
+                continue
+            nuevos_textos.append(self._texto_semantico_doc(self.documentos[doc_id]))
+            nuevos_ids_validos.append(doc_id)
+        
+        if not nuevos_textos:
+            return
+        
+        # Si usamos sentence-transformers, generar embeddings de nuevos docs
+        if self.st_model is not None and _HAS_SENTENCE_TRANSFORMERS:
+            try:
+                print(f"  🔄 Codificando {len(nuevos_textos)} documentos con sentence-transformers...")
+                nuevos_embeddings = self.st_model.encode(nuevos_textos, show_progress_bar=False, convert_to_numpy=True)
+                nuevos_embeddings = normalize(nuevos_embeddings)
+                
+                # Agregar nuevos embeddings al array existente
+                if self.document_embeddings is not None and len(self.document_embeddings) > 0:
+                    self.document_embeddings = np.vstack([self.document_embeddings, nuevos_embeddings])
+                    print(f"  ✅ {len(nuevos_embeddings)} embeddings agregados (total: {len(self.document_embeddings)})")
+                else:
+                    self.document_embeddings = nuevos_embeddings
+                    print(f"  ✅ {len(nuevos_embeddings)} embeddings creados (primeros)")
+                
+                # Actualizar orden de document_ids
+                self.document_ids_order.extend(nuevos_ids_validos)
+                
+            except Exception as e:
+                print(f"⚠️ Error generando embeddings incrementales: {e}")
+        else:
+            print("⚠️ No hay modelo ST disponible para embeddings incrementales")
+    
     def procesar_documentos_incrementales(self, nuevos_doc_ids):
         """
         Procesa solo los nuevos documentos agregados sin recalcular todo desde cero.
         Mucho más eficiente que procesar_documentos() cuando solo se agregan algunos documentos.
+        
+        Ahora incluye generación incremental de embeddings.
         
         Args:
             nuevos_doc_ids (list): IDs de los nuevos documentos a procesar
@@ -508,8 +606,8 @@ class IndexadorTFIDF:
         print(f"  ✅ {len(nuevos_doc_ids)} documentos nuevos procesados")
         print(f"  ✅ Vocabulario total: {len(self.vocabulario)} términos únicos")
 
-        # Reconstruir embeddings semánticos para incluir los nuevos documentos
-        self.construir_indice_semantico()
+        # Agregar embeddings incrementales (sin recalcular todo el corpus)
+        self.agregar_embeddings_incrementales(nuevos_doc_ids)
     
     def obtener_documento(self, doc_id):
         return self.documentos.get(doc_id)
@@ -552,6 +650,9 @@ class IndexadorTFIDF:
         
         print(f"✏️  Documento agregado: {doc_id}")
         
+        # Generar embedding incremental para el nuevo documento
+        self.agregar_embeddings_incrementales([doc_id])
+        
         return doc_id
     
     def guardar_indice(self, archivo_salida='indice_musica.json'):
@@ -576,7 +677,7 @@ class IndexadorTFIDF:
         print(f"  ✅ Índice guardado")
     
     def guardar_embeddings(self, archivo_salida='indice_musica.json'):
-        if self.vectorizer is None or self.document_embeddings is None or not self.document_ids_order:
+        if self.document_embeddings is None or not self.document_ids_order:
             print("⚠️  No hay embeddings semánticos para guardar.")
             return
 
@@ -585,13 +686,43 @@ class IndexadorTFIDF:
         svd_path = base_path.with_suffix('.svd.pkl')
         embeddings_path = base_path.with_suffix('.embeddings.npz')
 
-        with open(vectorizer_path, 'wb') as f:
-            pickle.dump(self.vectorizer, f)
-        with open(svd_path, 'wb') as f:
-            pickle.dump(self.svd, f)
-        np.savez_compressed(embeddings_path, embeddings=self.document_embeddings)
+        # Guardar TF-IDF + SVD solo si existen
+        saved_names = []
+        try:
+            if self.vectorizer is not None:
+                with open(vectorizer_path, 'wb') as f:
+                    pickle.dump(self.vectorizer, f)
+                saved_names.append(vectorizer_path.name)
+            if self.svd is not None:
+                with open(svd_path, 'wb') as f:
+                    pickle.dump(self.svd, f)
+                saved_names.append(svd_path.name)
+            if self.vectorizer is not None or self.svd is not None:
+                np.savez_compressed(embeddings_path, embeddings=self.document_embeddings)
+                saved_names.append(embeddings_path.name)
 
-        print(f"  ✅ Embeddings guardados en disco: {vectorizer_path.name}, {svd_path.name}, {embeddings_path.name}")
+            if saved_names:
+                print(f"  ✅ Embeddings guardados en disco: {', '.join(saved_names)}")
+        except Exception as e:
+            print(f"⚠️ Error guardando TF-IDF/SVD embeddings: {e}")
+        # Si usamos sentence-transformers, guardar también ese archivo y metadata
+        st_embeddings_path = base_path.with_suffix('.st.embeddings.npz')
+        st_model_path = base_path.with_suffix('.st_model.txt')
+        st_order_path = base_path.with_suffix('.st_order.txt')
+        if self.st_model_name is not None and self.document_embeddings is not None:
+            try:
+                # Si st_model_name está definida, intentamos guardar los embeddings originales del ST
+                # Nota: en caso de haber normalizado ya, guardamos lo que haya en document_embeddings
+                np.savez_compressed(st_embeddings_path, embeddings=self.document_embeddings)
+                with open(st_model_path, 'w', encoding='utf-8') as f:
+                    f.write(self.st_model_name)
+                # Guardar el orden de document_ids para mantener consistencia
+                with open(st_order_path, 'w', encoding='utf-8') as f:
+                    for doc_id in self.document_ids_order:
+                        f.write(doc_id + '\n')
+                print(f"  ✅ Sentence-transformers embeddings guardados: {st_embeddings_path.name}, {st_model_path.name}, {st_order_path.name}")
+            except Exception as e:
+                print(f"⚠️ Error guardando sentence-transformers embeddings: {e}")
 
     def cargar_embeddings(self, archivo='indice_musica.json'):
         base_path = Path(archivo).with_suffix('')
@@ -599,6 +730,45 @@ class IndexadorTFIDF:
         svd_path = base_path.with_suffix('.svd.pkl')
         embeddings_path = base_path.with_suffix('.embeddings.npz')
 
+        st_embeddings_path = base_path.with_suffix('.st.embeddings.npz')
+        st_model_path = base_path.with_suffix('.st_model.txt')
+        st_order_path = base_path.with_suffix('.st_order.txt')
+
+        # Priorizar carga de embeddings de sentence-transformers si existen
+        if st_embeddings_path.exists():
+            try:
+                data = np.load(st_embeddings_path)
+                self.document_embeddings = normalize(data['embeddings'])
+                
+                # Restaurar orden de document_ids
+                if st_order_path.exists():
+                    try:
+                        with open(st_order_path, 'r', encoding='utf-8') as f:
+                            self.document_ids_order = [line.strip() for line in f if line.strip()]
+                    except Exception:
+                        self.document_ids_order = list(self.documentos.keys())
+                else:
+                    self.document_ids_order = list(self.documentos.keys())
+                
+                # leer nombre de modelo si existe
+                if st_model_path.exists():
+                    try:
+                        with open(st_model_path, 'r', encoding='utf-8') as f:
+                            self.st_model_name = f.read().strip()
+                    except Exception:
+                        self.st_model_name = None
+
+                    if _HAS_SENTENCE_TRANSFORMERS and self.st_model_name:
+                        try:
+                            self.st_model = SentenceTransformer(self.st_model_name)
+                        except Exception:
+                            self.st_model = None
+                print(f"  ✅ Cargados embeddings sentence-transformers desde disco: {st_embeddings_path.name}")
+                return True
+            except Exception as e:
+                print(f"⚠️ Error cargando sentence-transformers embeddings: {e}")
+
+        # Si no hay embeddings ST, intentar cargar TF-IDF+SVD
         if not vectorizer_path.exists() or not svd_path.exists() or not embeddings_path.exists():
             return False
 
