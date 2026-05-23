@@ -310,11 +310,13 @@ class IndexadorTFIDF:
                         artista = partes[1].strip()
                         titulo = partes[2].strip()
                         album = partes[3].strip() if len(partes) > 3 else ""
+                        url = partes[4].strip() if len(partes) > 4 else ""
                         
                         canciones[id_cancion] = {
                             'titulo': titulo,
                             'artista': artista,
-                            'album': album
+                            'album': album,
+                            'url': url
                         }
             print(f"  ✅ Cargadas {len(canciones)} canciones")
         else:
@@ -370,14 +372,14 @@ class IndexadorTFIDF:
                 'album': canciones.get(id_cancion, {}).get('album', ''),
                 'generos': generos.get(id_cancion, []),
                 'tags': tags.get(id_cancion, []),
-                'letra': letras.get(id_cancion, '')
+                'letra': letras.get(id_cancion, ''),
+                'url': canciones.get(id_cancion, {}).get('url', '')
             }
-        
+
         self.num_documentos = len(self.documentos)
         print(f"\n📊 Total documentos: {self.num_documentos}")
-        
         return self.documentos
-    
+
     def procesar_documentos(self):
         print("\n🔧 Procesando documentos (esto puede tomar un momento)...")
         
@@ -516,7 +518,10 @@ class IndexadorTFIDF:
         Args:
             nuevos_doc_ids (list): IDs de los nuevos documentos a procesar
         """
-        if not nuevos_doc_ids or not self.document_embeddings is None and len(self.document_embeddings) == 0:
+        if not nuevos_doc_ids:
+            return
+        
+        if self.document_embeddings is None or (len(self.document_embeddings) == 0 and self.st_model is None and self.vectorizer is None):
             return
         
         print(f"\n🧠 Generando embeddings para {len(nuevos_doc_ids)} documentos nuevos (incremental)...")
@@ -553,9 +558,28 @@ class IndexadorTFIDF:
                 self.document_ids_order.extend(nuevos_ids_validos)
                 
             except Exception as e:
-                print(f"⚠️ Error generando embeddings incrementales: {e}")
+                print(f"⚠️ Error generando embeddings incrementales con ST: {e}")
+        elif self.vectorizer is not None:
+            try:
+                print(f"  🔄 Generando embeddings TF-IDF/SVD para {len(nuevos_textos)} documentos nuevos...")
+                X_new = self.vectorizer.transform(nuevos_textos)
+                if self.svd is not None:
+                    nuevos_embeddings = normalize(self.svd.transform(X_new))
+                else:
+                    nuevos_embeddings = normalize(X_new.toarray())
+
+                if self.document_embeddings is not None and len(self.document_embeddings) > 0:
+                    self.document_embeddings = np.vstack([self.document_embeddings, nuevos_embeddings])
+                else:
+                    self.document_embeddings = nuevos_embeddings
+
+                self.document_ids_order.extend(nuevos_ids_validos)
+                print(f"  ✅ {len(nuevos_embeddings)} embeddings TF-IDF añadidos")
+            except Exception as e:
+                print(f"⚠️ Error generando embeddings TF-IDF incrementales: {e}")
+                print("  ℹ️  Continuando sin embeddings incrementales...")
         else:
-            print("⚠️ No hay modelo ST disponible para embeddings incrementales")
+            print("⚠️ No hay modelo ST o vectorizer disponible para embeddings incrementales")
     
     def procesar_documentos_incrementales(self, nuevos_doc_ids):
         """
@@ -567,47 +591,61 @@ class IndexadorTFIDF:
         Args:
             nuevos_doc_ids (list): IDs de los nuevos documentos a procesar
         """
+        if not nuevos_doc_ids:
+            return
+            
         print(f"\n🔧 Procesando {len(nuevos_doc_ids)} documentos nuevos (incrementalmente)...")
         
         for doc_id in nuevos_doc_ids:
             if doc_id not in self.documentos:
+                print(f"⚠️ Documento {doc_id} no encontrado en self.documentos, saltando...")
                 continue
+            
+            try:    
+                doc = self.documentos[doc_id]
                 
-            doc = self.documentos[doc_id]
-            
-            # Crear texto completo
-            texto_completo = f"{doc['titulo']} {doc['artista']} {doc['letra']}"
-            if doc.get('generos'):
-                texto_completo += " " + " ".join(doc['generos'])
-            if doc.get('tags'):
-                texto_completo += " " + " ".join(doc['tags'])
-            
-            # Detectar idioma del documento
-            idioma = self.procesador.detectar_idioma(texto_completo)
-            self.idiomas_documentos[doc_id] = idioma
-            
-            # Limpiar y tokenizar
-            tokens = self.procesador.limpiar_texto(texto_completo, idioma)
-            
-            # Calcular TF
-            tf = Counter(tokens)
-            
-            # Actualizar índice invertido
-            for termino, freq in tf.items():
-                self.indice_invertido[termino].append((doc_id, freq))
-                self.vocabulario.add(termino)
+                # Crear texto completo
+                texto_completo = f"{doc.get('titulo', '')} {doc.get('artista', '')} {doc.get('letra', '')}"
+                if doc.get('generos'):
+                    texto_completo += " " + " ".join(doc['generos'])
+                if doc.get('tags'):
+                    texto_completo += " " + " ".join(doc['tags'])
+                
+                # Detectar idioma del documento
+                idioma = self.procesador.detectar_idioma(texto_completo)
+                self.idiomas_documentos[doc_id] = idioma
+                
+                # Limpiar y tokenizar
+                tokens = self.procesador.limpiar_texto(texto_completo, idioma)
+                
+                # Calcular TF
+                tf = Counter(tokens)
+                
+                # Actualizar índice invertido
+                for termino, freq in tf.items():
+                    self.indice_invertido[termino].append((doc_id, freq))
+                    self.vocabulario.add(termino)
+            except Exception as e:
+                #print(f"⚠️ Error procesando documento {doc_id}: {e}")
+                continue
         
         # Recalcular DF e IDF para todos los términos (afectados por nuevos docs)
-        print("📊 Recalculando IDF...")
-        for termino in self.vocabulario:
-            self.frecuencia_documentos[termino] = len(self.indice_invertido[termino])
-            self.idf[termino] = math.log(self.num_documentos / (self.frecuencia_documentos[termino] + 1))
+        try:
+            print("📊 Recalculando IDF...")
+            for termino in self.vocabulario:
+                self.frecuencia_documentos[termino] = len(self.indice_invertido[termino])
+                self.idf[termino] = math.log(self.num_documentos / (self.frecuencia_documentos[termino] + 1))
+        except Exception as e:
+            print(f"⚠️ Error recalculando IDF: {e}")
         
         print(f"  ✅ {len(nuevos_doc_ids)} documentos nuevos procesados")
         print(f"  ✅ Vocabulario total: {len(self.vocabulario)} términos únicos")
 
         # Agregar embeddings incrementales (sin recalcular todo el corpus)
-        self.agregar_embeddings_incrementales(nuevos_doc_ids)
+        try:
+            self.agregar_embeddings_incrementales(nuevos_doc_ids)
+        except Exception as e:
+            print(f"⚠️ Error en agregar_embeddings_incrementales: {e}")
     
     def obtener_documento(self, doc_id):
         return self.documentos.get(doc_id)
@@ -647,6 +685,7 @@ class IndexadorTFIDF:
         # Agregar a documentos
         self.documentos[doc_id] = documento
         self.num_documentos = len(self.documentos)
+        self.document_ids_order.append(doc_id)
         
         print(f"✏️  Documento agregado: {doc_id}")
         

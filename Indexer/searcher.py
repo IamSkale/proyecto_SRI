@@ -9,6 +9,11 @@ from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+
 # Variable global para el indexador
 _indexador_global = None
 
@@ -365,28 +370,46 @@ def _scrape_letra_genius(url):
         str: Letra de la canción
     """
     try:
-        from bs4 import BeautifulSoup
-        
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Buscar contenedor de letras en Genius
-        lyrics_container = soup.find('div', {'data-lyrics-container': 'true'})
-        if lyrics_container:
-            lineas = []
-            for br in lyrics_container.find_all('br'):
-                br.replace_with('\n')
-            letra = lyrics_container.get_text()
-            return letra.strip()
-        
+        html = response.text
+
+        if BeautifulSoup is not None:
+            soup = BeautifulSoup(html, 'html.parser')
+            lyrics_nodes = soup.find_all('div', {'data-lyrics-container': 'true'})
+            if not lyrics_nodes:
+                lyrics_nodes = soup.select('div[class*="Lyrics__Container"]')
+
+            if lyrics_nodes:
+                fragments = []
+                for node in lyrics_nodes:
+                    for br in node.find_all('br'):
+                        br.replace_with('\n')
+                    fragments.append(node.get_text(separator='\n'))
+                letra = '\n'.join([fragment.strip() for fragment in fragments if fragment.strip()])
+                return letra.strip() if letra.strip() else "[Letra no disponible]"
+        else:
+            # Fallback simple si no está instalado beautifulsoup4
+            matches = re.findall(r'<div[^>]*data-lyrics-container=["\"]true["\"][^>]*>(.*?)</div>', html, flags=re.S | re.I)
+            if not matches:
+                matches = re.findall(r'<div[^>]*class=["\"][^"\"]*Lyrics__Container[^"\"]*["\"][^>]*>(.*?)</div>', html, flags=re.S | re.I)
+
+            if matches:
+                fragments = []
+                for match in matches:
+                    texto = re.sub(r'<br\s*/?>', '\n', match, flags=re.I)
+                    texto = re.sub(r'<.*?>', '', texto)
+                    texto = texto.strip()
+                    if texto:
+                        fragments.append(texto)
+                letra = '\n'.join(fragments)
+                return letra.strip() if letra.strip() else "[Letra no disponible]"
+
         return "[Letra no disponible]"
-    
     except Exception as e:
         print(f"⚠️  Error extrayendo letra de Genius: {e}")
         return "[Letra no disponible]"
@@ -489,11 +512,28 @@ def buscar_canciones_avanzado_con_web(query, min_score=15, usar_genius=False, ge
                         _indexador_global.guardar_indice('indice_musica.json')  # Guardar cambios
                         print(f"✅ Documentos re-vectorizados y guardados")
                         
+                        try:
+                            _indexador_global.cargar_indice('indice_musica.json')
+                            print("✅ Índice recargado desde indice_musica.json")
+                        except Exception as e:
+                            print(f"⚠️ Error recargando índice desde archivo: {e}")
+                        
                         # Buscar nuevamente con los datos actualizados
                         resultados_locales = buscar_canciones_avanzado(query, min_score)
                         print(f"📊 Resultados después de Genius: {len(resultados_locales)}")
+                        
+                        if ids_nuevos:
+                            resultados_ids = {doc_id for doc_id, _, _ in resultados_locales}
+                            for nuevo_id in ids_nuevos:
+                                if nuevo_id not in resultados_ids:
+                                    cancion = _indexador_global.obtener_documento(nuevo_id)
+                                    if cancion:
+                                        resultados_locales.append((nuevo_id, min_score + 5.0, ['nuevo desde Genius']))
+                            resultados_locales.sort(key=lambda x: x[1], reverse=True)
                     except Exception as e:
+                        import traceback
                         print(f"⚠️  Error re-procesando documentos: {e}")
+                        traceback.print_exc()
             else:
                 print("⚠️ No se encontraron canciones nuevas para agregar desde Genius.")
 
