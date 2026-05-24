@@ -63,12 +63,21 @@ def buscar_canciones_avanzado(query, min_score=15):
                        for doc in _indexador_global.documentos.values()]
         avg_doc_len = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 100
 
-        if getattr(_indexador_global, 'document_embeddings', None) is not None:
+        # Usar FAISS para búsqueda vectorial optimizada
+        if getattr(_indexador_global, 'document_embeddings', None) is not None and getattr(_indexador_global, 'buscador_faiss', None) is not None:
             query_vec = _indexador_global.obtener_embedding(query)
             if query_vec is not None:
-                for idx, doc_id in enumerate(_indexador_global.document_ids_order or _indexador_global.documentos.keys()):
-                    if idx < len(_indexador_global.document_embeddings):
-                        semantic_scores[doc_id] = float(np.dot(_indexador_global.document_embeddings[idx], query_vec))
+                # Buscar con FAISS - mucho más rápido que búsqueda exhaustiva
+                try:
+                    num_docs = min(len(_indexador_global.documentos), 1000)
+                    faiss_results = _indexador_global.buscador_faiss.buscar(query_vec, k=num_docs)
+                    semantic_scores = {doc_id: float(sim) for doc_id, sim in faiss_results}
+                except Exception as e:
+                    print(f"⚠️ Error usando FAISS: {e}. Usando búsqueda exhaustiva...")
+                    # Fallback a búsqueda exhaustiva si FAISS falla
+                    for idx, doc_id in enumerate(_indexador_global.document_ids_order or _indexador_global.documentos.keys()):
+                        if idx < len(_indexador_global.document_embeddings):
+                            semantic_scores[doc_id] = float(np.dot(_indexador_global.document_embeddings[idx], query_vec))
     for doc_id, cancion in (_indexador_global.documentos.items() if _indexador_global else info_completa.items()):
         puntuacion = 0
         razones = []
@@ -282,17 +291,6 @@ def mostrar_detalle_completo(cancion_id, info_completa=None):
 
 
 def buscar_en_genius(query, max_intentos=10, genius_token=None):
-    """
-    Busca canciones en Genius.com usando su API y web scraping.
-    
-    Args:
-        query (str): Término de búsqueda (artista y/o canción)
-        max_intentos (int): Máximo número de canciones a buscar (defecto: 10)
-        genius_token (str|None): Token de acceso de Genius para la API oficial
-    
-    Returns:
-        list: Lista de canciones encontradas con estructura [titulo, artista, letra]
-    """
     global _indexador_global
     
     canciones_encontradas = []
@@ -360,15 +358,6 @@ def buscar_en_genius(query, max_intentos=10, genius_token=None):
 
 
 def _scrape_letra_genius(url):
-    """
-    Extrae la letra de una canción en Genius.
-    
-    Args:
-        url (str): URL de la canción en Genius
-    
-    Returns:
-        str: Letra de la canción
-    """
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -416,9 +405,6 @@ def _scrape_letra_genius(url):
 
 
 def es_cancion_duplicada(cancion_data):
-    """
-    Comprueba si una canción ya existe en el índice local basado en título/artista o URL.
-    """
     global _indexador_global
     if not _indexador_global:
         return False
@@ -441,15 +427,6 @@ def es_cancion_duplicada(cancion_data):
 
 
 def agregar_canciones_encontradas(canciones_nuevas):
-    """
-    Agrega canciones encontradas a la base de datos local.
-    
-    Args:
-        canciones_nuevas (list): Lista de canciones a agregar
-    
-    Returns:
-        tuple: (número de canciones agregadas, lista de IDs agregados)
-    """
     global _indexador_global
     
     if not _indexador_global:
@@ -476,19 +453,6 @@ def agregar_canciones_encontradas(canciones_nuevas):
 
 
 def buscar_canciones_avanzado_con_web(query, min_score=15, usar_genius=False, genius_token=None):
-    """
-    Búsqueda avanzada que integra búsqueda local y web.
-    Si se activa la opción, busca en Genius cuando hay pocos resultados locales.
-    
-    Args:
-        query (str): Término de búsqueda
-        min_score (int): Puntuación mínima de relevancia
-        usar_genius (bool): Si se debe complementar con búsqueda en Genius
-        genius_token (str|None): Token de acceso de Genius para la API oficial
-    
-    Returns:
-        list: Tuplas (doc_id, score, razones)
-    """
     # Búsqueda local primero
     resultados_locales = buscar_canciones_avanzado(query, min_score)
     

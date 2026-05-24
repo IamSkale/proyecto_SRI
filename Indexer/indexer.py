@@ -19,6 +19,9 @@ try:
 except Exception:
     SentenceTransformer = None
     _HAS_SENTENCE_TRANSFORMERS = False
+
+# Importar módulo FAISS
+from .faiss_searcher import BuscadorFAISSHibrido
 class ProcesadorTexto:    
     def __init__(self):
         # Stopwords por idioma
@@ -289,6 +292,9 @@ class IndexadorTFIDF:
         self.st_model_name = None
         self.use_sentence_transformer = _HAS_SENTENCE_TRANSFORMERS
         
+        # Buscador FAISS para búsqueda vectorial optimizada
+        self.buscador_faiss = BuscadorFAISSHibrido(usar_faiss=True)
+        
         self.num_documentos = 0
     
     def cargar_datos(self):
@@ -468,6 +474,11 @@ class IndexadorTFIDF:
                 print(f"  🔄 Codificando {len(documentos_texto)} documentos con batch_size={batch_size}...")
                 embeddings = self.st_model.encode(documentos_texto, batch_size=batch_size, show_progress_bar=False, convert_to_numpy=True)
                 self.document_embeddings = normalize(embeddings)
+                
+                # Crear índice FAISS con los embeddings
+                print(f"  📑 Creando índice FAISS Flat...")
+                self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
+                
                 # No dependemos de TF-IDF vectorizer/SVD en este camino, pero las guardamos si existen
                 return
             except Exception as e:
@@ -481,11 +492,14 @@ class IndexadorTFIDF:
         if n_components < 1:
             self.svd = None
             self.document_embeddings = normalize(X.toarray())
-            return
-
-        self.svd = TruncatedSVD(n_components=n_components, random_state=42)
-        X_reduced = self.svd.fit_transform(X)
-        self.document_embeddings = normalize(X_reduced)
+        else:
+            self.svd = TruncatedSVD(n_components=n_components, random_state=42)
+            X_reduced = self.svd.fit_transform(X)
+            self.document_embeddings = normalize(X_reduced)
+        
+        # Crear índice FAISS con los embeddings TF-IDF
+        print(f"  📑 Creando índice FAISS Flat (TF-IDF)...")
+        self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
 
     def obtener_embedding(self, texto):
         if not texto:
@@ -511,13 +525,6 @@ class IndexadorTFIDF:
         return normalize(vector)[0]
 
     def agregar_embeddings_incrementales(self, nuevos_doc_ids):
-        """
-        Agrega embeddings solo para documentos nuevos sin recalcular todo el corpus.
-        Mucho más eficiente que reconstruir embeddings cuando solo se agregan pocos documentos.
-        
-        Args:
-            nuevos_doc_ids (list): IDs de los nuevos documentos a procesar
-        """
         if not nuevos_doc_ids:
             return
         
@@ -582,15 +589,6 @@ class IndexadorTFIDF:
             print("⚠️ No hay modelo ST o vectorizer disponible para embeddings incrementales")
     
     def procesar_documentos_incrementales(self, nuevos_doc_ids):
-        """
-        Procesa solo los nuevos documentos agregados sin recalcular todo desde cero.
-        Mucho más eficiente que procesar_documentos() cuando solo se agregan algunos documentos.
-        
-        Ahora incluye generación incremental de embeddings.
-        
-        Args:
-            nuevos_doc_ids (list): IDs de los nuevos documentos a procesar
-        """
         if not nuevos_doc_ids:
             return
             
@@ -654,16 +652,6 @@ class IndexadorTFIDF:
         return self.documentos
     
     def agregar_documento(self, cancion_data):
-        """
-        Agrega un nuevo documento a la base de datos indexada.
-        
-        Args:
-            cancion_data (dict): Diccionario con información de la canción
-                Debe contener: titulo, artista, letra, album, generos, tags
-        
-        Returns:
-            str: ID del documento agregado
-        """
         # Generar ID único basado en titulo y artista
         titulo = cancion_data.get('titulo', '').lower().replace(' ', '_')[:20]
         artista = cancion_data.get('artista', '').lower().replace(' ', '_')[:15]
@@ -724,6 +712,13 @@ class IndexadorTFIDF:
         vectorizer_path = base_path.with_suffix('.vectorizer.pkl')
         svd_path = base_path.with_suffix('.svd.pkl')
         embeddings_path = base_path.with_suffix('.embeddings.npz')
+        
+        # Guardar índice FAISS
+        try:
+            faiss_base = str(base_path) + '.faiss'
+            self.buscador_faiss.guardar_indice(faiss_base)
+        except Exception as e:
+            print(f"⚠️ Error guardando índice FAISS: {e}")
 
         # Guardar TF-IDF + SVD solo si existen
         saved_names = []
@@ -802,6 +797,15 @@ class IndexadorTFIDF:
                             self.st_model = SentenceTransformer(self.st_model_name)
                         except Exception:
                             self.st_model = None
+                
+                # Cargar índice FAISS si existe
+                try:
+                    faiss_base = str(base_path) + '.faiss'
+                    self.buscador_faiss.cargar_indice(faiss_base)
+                except Exception as e:
+                    print(f"⚠️ No se pudo cargar índice FAISS: {e}. Reconstruyendo...")
+                    self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
+                
                 print(f"  ✅ Cargados embeddings sentence-transformers desde disco: {st_embeddings_path.name}")
                 return True
             except Exception as e:
@@ -818,6 +822,15 @@ class IndexadorTFIDF:
                 self.svd = pickle.load(f)
             data = np.load(embeddings_path)
             self.document_embeddings = normalize(data['embeddings'])
+            
+            # Cargar índice FAISS si existe
+            try:
+                faiss_base = str(base_path) + '.faiss'
+                self.buscador_faiss.cargar_indice(faiss_base)
+            except Exception as e:
+                print(f"⚠️ No se pudo cargar índice FAISS: {e}. Reconstruyendo...")
+                self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
+            
             return True
         except Exception as e:
             print(f"⚠️ Error cargando embeddings: {e}")
