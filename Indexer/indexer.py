@@ -20,8 +20,6 @@ except Exception:
     SentenceTransformer = None
     _HAS_SENTENCE_TRANSFORMERS = False
 
-# Importar módulo FAISS
-from .faiss_searcher import BuscadorFAISSHibrido
 class ProcesadorTexto:    
     def __init__(self):
         # Stopwords por idioma
@@ -291,10 +289,7 @@ class IndexadorTFIDF:
         self.st_model = None
         self.st_model_name = None
         self.use_sentence_transformer = _HAS_SENTENCE_TRANSFORMERS
-        
-        # Buscador FAISS para búsqueda vectorial optimizada
-        self.buscador_faiss = BuscadorFAISSHibrido(usar_faiss=True)
-        
+                
         self.num_documentos = 0
     
     def cargar_datos(self):
@@ -475,10 +470,6 @@ class IndexadorTFIDF:
                 embeddings = self.st_model.encode(documentos_texto, batch_size=batch_size, show_progress_bar=False, convert_to_numpy=True)
                 self.document_embeddings = normalize(embeddings)
                 
-                # Crear índice FAISS con los embeddings
-                print(f"  📑 Creando índice FAISS Flat...")
-                self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
-                
                 # No dependemos de TF-IDF vectorizer/SVD en este camino, pero las guardamos si existen
                 return
             except Exception as e:
@@ -496,10 +487,7 @@ class IndexadorTFIDF:
             self.svd = TruncatedSVD(n_components=n_components, random_state=42)
             X_reduced = self.svd.fit_transform(X)
             self.document_embeddings = normalize(X_reduced)
-        
-        # Crear índice FAISS con los embeddings TF-IDF
-        print(f"  📑 Creando índice FAISS Flat (TF-IDF)...")
-        self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
+
 
     def obtener_embedding(self, texto):
         if not texto:
@@ -713,12 +701,6 @@ class IndexadorTFIDF:
         svd_path = base_path.with_suffix('.svd.pkl')
         embeddings_path = base_path.with_suffix('.embeddings.npz')
         
-        # Guardar índice FAISS
-        try:
-            faiss_base = str(base_path) + '.faiss'
-            self.buscador_faiss.guardar_indice(faiss_base)
-        except Exception as e:
-            print(f"⚠️ Error guardando índice FAISS: {e}")
 
         # Guardar TF-IDF + SVD solo si existen
         saved_names = []
@@ -798,14 +780,6 @@ class IndexadorTFIDF:
                         except Exception:
                             self.st_model = None
                 
-                # Cargar índice FAISS si existe
-                try:
-                    faiss_base = str(base_path) + '.faiss'
-                    self.buscador_faiss.cargar_indice(faiss_base)
-                except Exception as e:
-                    print(f"⚠️ No se pudo cargar índice FAISS: {e}. Reconstruyendo...")
-                    self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
-                
                 print(f"  ✅ Cargados embeddings sentence-transformers desde disco: {st_embeddings_path.name}")
                 return True
             except Exception as e:
@@ -822,14 +796,6 @@ class IndexadorTFIDF:
                 self.svd = pickle.load(f)
             data = np.load(embeddings_path)
             self.document_embeddings = normalize(data['embeddings'])
-            
-            # Cargar índice FAISS si existe
-            try:
-                faiss_base = str(base_path) + '.faiss'
-                self.buscador_faiss.cargar_indice(faiss_base)
-            except Exception as e:
-                print(f"⚠️ No se pudo cargar índice FAISS: {e}. Reconstruyendo...")
-                self.buscador_faiss.crear_indice(self.document_embeddings, self.document_ids_order)
             
             return True
         except Exception as e:

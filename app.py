@@ -1,14 +1,27 @@
+import os
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from pathlib import Path
+from dotenv import load_dotenv  # Añadir esta importación
+
+# Cargar variables de entorno desde archivo .env en la raíz del proyecto
+# Busca .env en el directorio padre (raíz del proyecto)
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+# También intentar cargar desde el directorio actual por si acaso
+load_dotenv()
+
 from Indexer.indexer import IndexadorTFIDF
 from Indexer.searcher import set_indexador, buscar_canciones_avanzado_con_web
+from rag.pipeline import RAGPipeline
 
 app = Flask(__name__)
 CORS(app)
 
-# Variable global para el indexador
+# Variables globales para el indexador y RAG
 indexador = None
+rag_pipeline = None
 
 def inicializar_indexador():
     """Inicializa el indexador al arrancar la aplicación"""
@@ -64,6 +77,7 @@ def extraer_fragmento_letra(cancion_doc, query, max_antes=40, max_despues=80):
         return fragmento
 
     preview = letra.strip()
+    return preview[:200] + '...' if len(preview) > 200 else preview
 
 
 @app.route('/')
@@ -114,6 +128,36 @@ def buscar():
             canciones.append(cancion)
     
     return jsonify(canciones)
+
+
+def obtener_rag_pipeline():
+    global rag_pipeline
+    if rag_pipeline is None:
+        # La API key se cargará automáticamente desde .env por RAGPipeline
+        # RAGPipeline ya tiene load_dotenv() internamente, pero pasamos explícitamente
+        api_key = os.environ.get('DEEPSEEK_API_KEY', '').strip()
+        if not api_key:
+            print("⚠️ DEEPSEEK_API_KEY no encontrada en .env. El generador usará fallback.")
+        else:
+            print(f"✅ DEEPSEEK_API_KEY cargada desde .env (longitud: {len(api_key)} chars)")
+        rag_pipeline = RAGPipeline(api_key=api_key or None)
+    return rag_pipeline
+
+
+@app.route('/rag', methods=['POST'])
+def rag():
+    data = request.json or {}
+    query = (data.get('query') or '').strip()
+    if not query:
+        return jsonify({'error': 'La consulta no puede estar vacía.'}), 400
+
+    try:
+        pipeline = obtener_rag_pipeline()
+        respuesta, documentos = pipeline.answer(query, top_k=3)
+        return jsonify({'answer': respuesta, 'documents': documentos})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     inicializar_indexador()

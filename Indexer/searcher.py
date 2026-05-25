@@ -63,21 +63,15 @@ def buscar_canciones_avanzado(query, min_score=15):
                        for doc in _indexador_global.documentos.values()]
         avg_doc_len = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 100
 
-        # Usar FAISS para búsqueda vectorial optimizada
-        if getattr(_indexador_global, 'document_embeddings', None) is not None and getattr(_indexador_global, 'buscador_faiss', None) is not None:
+        # Búsqueda por similitud coseno usando embeddings
+        if getattr(_indexador_global, 'document_embeddings', None) is not None:
             query_vec = _indexador_global.obtener_embedding(query)
             if query_vec is not None:
-                # Buscar con FAISS - mucho más rápido que búsqueda exhaustiva
-                try:
-                    num_docs = min(len(_indexador_global.documentos), 1000)
-                    faiss_results = _indexador_global.buscador_faiss.buscar(query_vec, k=num_docs)
-                    semantic_scores = {doc_id: float(sim) for doc_id, sim in faiss_results}
-                except Exception as e:
-                    print(f"⚠️ Error usando FAISS: {e}. Usando búsqueda exhaustiva...")
-                    # Fallback a búsqueda exhaustiva si FAISS falla
-                    for idx, doc_id in enumerate(_indexador_global.document_ids_order or _indexador_global.documentos.keys()):
-                        if idx < len(_indexador_global.document_embeddings):
-                            semantic_scores[doc_id] = float(np.dot(_indexador_global.document_embeddings[idx], query_vec))
+                # Búsqueda exhaustiva por similitud coseno
+                for idx, doc_id in enumerate(_indexador_global.document_ids_order or _indexador_global.documentos.keys()):
+                    if idx < len(_indexador_global.document_embeddings):
+                        semantic_scores[doc_id] = float(np.dot(_indexador_global.document_embeddings[idx], query_vec))
+    
     for doc_id, cancion in (_indexador_global.documentos.items() if _indexador_global else info_completa.items()):
         puntuacion = 0
         razones = []

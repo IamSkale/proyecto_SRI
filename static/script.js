@@ -12,7 +12,9 @@ async function buscarCanciones() {
 
     // Limpiar resultados anteriores y mostrar loading
     const container = document.getElementById('resultsContainer');
+    const answerContainer = document.getElementById('ragAnswerContainer');
     container.innerHTML = '';
+    answerContainer.innerHTML = '';
     mostrarLoading(true);
     
     try {
@@ -37,6 +39,83 @@ async function buscarCanciones() {
     } finally {
         mostrarLoading(false);
     }
+}
+
+async function buscarRAG() {
+    const searchInput = document.getElementById('searchInput');
+    const query = searchInput.value.trim();
+
+    if (!query) {
+        mostrarMensaje('Por favor, ingresa un término de búsqueda', 'warning');
+        return;
+    }
+
+    // Limpiar resultados anteriores y mostrar loading
+    const resultsContainer = document.getElementById('resultsContainer');
+    const answerContainer = document.getElementById('ragAnswerContainer');
+    resultsContainer.innerHTML = '';
+    answerContainer.innerHTML = '';
+    mostrarLoading(true);
+
+    try {
+        const response = await fetch('/rag', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ query: query })
+        });
+
+        const data = await response.json();
+        if (!response.ok || data.error) {
+            throw new Error(data.error || 'Error en la búsqueda RAG');
+        }
+
+        mostrarResultadosRAG(data);
+    } catch (error) {
+        console.error('Error:', error);
+        mostrarMensaje('Error al realizar búsqueda RAG. Intenta de nuevo.', 'error');
+    } finally {
+        mostrarLoading(false);
+    }
+}
+
+function mostrarResultadosRAG(data) {
+    const answerContainer = document.getElementById('ragAnswerContainer');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const answer = data.answer || '';
+    const documentos = data.documents || [];
+
+    answerContainer.innerHTML = `
+        <div class="rag-answer-card">
+            <h2>Respuesta RAG</h2>
+            <p>${escapeHtml(answer).replace(/\n/g, '<br>')}</p>
+        </div>
+    `;
+
+    if (!documentos.length) {
+        resultsContainer.innerHTML = `<div class="no-results">No se recuperaron documentos relevantes.</div>`;
+        return;
+    }
+
+    resultsContainer.innerHTML = `
+        <div class="rag-documents-title">Documentos recuperados</div>
+        ${documentos.map((doc, index) => `
+            <div class="song-card rag-doc-card">
+                <div class="song-header">
+                    <div>
+                        <h3 class="song-title">${escapeHtml(doc.titulo || 'Sin título')}</h3>
+                        <p class="song-artist">${escapeHtml(doc.artista || 'Desconocido')}</p>
+                    </div>
+                    <span class="song-score">${doc.score ? doc.score.toFixed(3) : '0.00'}</span>
+                </div>
+                <div class="song-metadata">
+                    ${doc.generos && doc.generos.length ? `<div class="song-detail"><strong>Géneros:</strong> ${escapeHtml(doc.generos.join(', '))}</div>` : ''}
+                    <div class="song-detail"><strong>Contexto:</strong><div class="lyrics">${escapeHtml(doc.contexto || '').replace(/\n/g, '<br>')}</div></div>
+                </div>
+            </div>
+        `).join('')}
+    `;
 }
 
 function mostrarResultados(canciones) {
@@ -67,11 +146,6 @@ function mostrarResultados(canciones) {
                 ${cancion.generos && cancion.generos.length > 0 ? `
                 <div class="song-detail">
                     <strong>🏷️ Géneros:</strong> ${escapeHtml(cancion.generos.join(', '))}
-                </div>
-                ` : ''}
-                ${cancion.tags && cancion.tags.length > 0 ? `
-                <div class="song-detail">
-                    <strong>🔖 Tags:</strong> ${escapeHtml(cancion.tags.join(', '))}
                 </div>
                 ` : ''}
                 ${cancion.snippet ? `
