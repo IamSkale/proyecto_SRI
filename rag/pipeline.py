@@ -7,24 +7,29 @@ load_dotenv()
 
 class RAGPipeline:
     def __init__(self,
-                 index_path="indice_musica.json",  # CAMBIADO a .json
+                 index_path="indice_musica.json",
                  data_folder="Database",
                  lyrics_folder="Database/lyrics",
-                 model="deepseek-chat",
+                 model="qwen2.5-3b",  # Cambiado a Qwen2.5-7B
+                 model_path=None,
+                 use_gpu=False,
                  api_key=None):
-        
-        if api_key is None:
-            api_key = os.environ.get('DEEPSEEK_API_KEY')
         
         print(f"\n🔧 Inicializando RAG Pipeline...")
         print(f"   Index path: {index_path}")
+        print(f"   Modelo: {model}")
         
         self.retriever = RAGRetriever(index_path=index_path,
                                       data_folder=data_folder,
                                       lyrics_folder=lyrics_folder)
-        self.generator = RAGGenerator(model=model, api_key=api_key)
+        self.generator = RAGGenerator(
+            model=model, 
+            model_path=model_path,
+            use_gpu=use_gpu,
+            api_key=api_key
+        )
 
-    def answer(self, query, top_k=3, max_tokens=250, temperature=0.3):
+    def answer(self, query, top_k=3, max_tokens=512, temperature=0.3):
         print(f"\n🔍 RAG - Procesando consulta: {query[:50]}...")
         
         resultados = self.retriever.retrieve(query, top_k=top_k)

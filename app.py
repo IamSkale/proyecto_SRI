@@ -2,14 +2,11 @@ import os
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from pathlib import Path
-from dotenv import load_dotenv  # Añadir esta importación
+from dotenv import load_dotenv
 
-# Cargar variables de entorno desde archivo .env en la raíz del proyecto
-# Busca .env en el directorio padre (raíz del proyecto)
-env_path = Path(__file__).parent.parent / '.env'
+# Cargar variables de entorno
+env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path)
-
-# También intentar cargar desde el directorio actual por si acaso
 load_dotenv()
 
 from Indexer.indexer import IndexadorTFIDF
@@ -19,7 +16,7 @@ from rag.pipeline import RAGPipeline
 app = Flask(__name__)
 CORS(app)
 
-# Variables globales para el indexador y RAG
+# Variables globales
 indexador = None
 rag_pipeline = None
 
@@ -99,7 +96,6 @@ def buscar():
     if not query:
         return jsonify([])
     
-    # Obtener resultados de búsqueda (tuples: doc_id, score, razones)
     resultados_tuples = buscar_canciones_avanzado_con_web(
         query,
         min_score=15,
@@ -107,7 +103,6 @@ def buscar():
         genius_token=genius_token
     )
     
-    # Convertir a formato JSON con datos completos de canciones
     canciones = []
     for doc_id, score, razones in resultados_tuples:
         cancion_doc = indexador.obtener_documento(doc_id)
@@ -133,14 +128,19 @@ def buscar():
 def obtener_rag_pipeline():
     global rag_pipeline
     if rag_pipeline is None:
-        # La API key se cargará automáticamente desde .env por RAGPipeline
-        # RAGPipeline ya tiene load_dotenv() internamente, pero pasamos explícitamente
-        api_key = os.environ.get('DEEPSEEK_API_KEY', '').strip()
-        if not api_key:
-            print("⚠️ DEEPSEEK_API_KEY no encontrada en .env. El generador usará fallback.")
-        else:
-            print(f"✅ DEEPSEEK_API_KEY cargada desde .env (longitud: {len(api_key)} chars)")
-        rag_pipeline = RAGPipeline(api_key=api_key or None)
+        # Configuración para Qwen2.5 local
+        use_gpu = os.environ.get('USE_GPU', 'false').lower() == 'true'
+        model = os.environ.get('RAG_MODEL', 'qwen2.5-3b')
+        model_path = os.environ.get('MODEL_PATH', None)
+        
+        print(f"📌 Configurando RAG con modelo: {model}")
+        print(f"   GPU activada: {use_gpu}")
+        
+        rag_pipeline = RAGPipeline(
+            model=model,
+            model_path=model_path,
+            use_gpu=use_gpu
+        )
     return rag_pipeline
 
 
