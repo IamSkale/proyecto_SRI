@@ -180,5 +180,8 @@ def rag():
 
 
 if __name__ == '__main__':
-    inicializar_indexador()
+    # Evitar doble inicialización con el reloader de Flask
+    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+        inicializar_indexador()
+    
     app.run(debug=True, port=5000)
