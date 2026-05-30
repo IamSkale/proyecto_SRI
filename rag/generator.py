@@ -57,13 +57,6 @@ class RAGGenerator:
     }
     
     def __init__(self, model="qwen2.5-3b", model_path=None, use_gpu=False, api_key=None):
-        """
-        Args:
-            model: Nombre del modelo ('qwen2.5-7b', 'qwen2.5-3b', 'qwen2.5-1.5b', 'phi-3.5-mini')
-            model_path: Ruta directa al archivo .gguf (opcional, sobreescribe model)
-            use_gpu: Si es True, intenta usar GPU (requiere versión con CUDA de llama-cpp)
-            api_key: Se ignora, mantenido por compatibilidad
-        """
         self.model_name = model
         self.model = None
         self.use_gpu = use_gpu

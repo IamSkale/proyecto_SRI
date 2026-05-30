@@ -3,6 +3,7 @@ import traceback
 from pathlib import Path
 import numpy as np
 from Indexer.indexer import IndexadorTFIDF
+from Indexer.searcher import buscar_canciones_avanzado, set_indexador
 
 
 class RAGRetriever:
@@ -11,12 +12,16 @@ class RAGRetriever:
     def __init__(self,
                  index_path="indice_musica.json",
                  data_folder="Database",
-                 lyrics_folder="Database/lyrics"):
+                 lyrics_folder="Database/lyrics",
+                 indexador=None):
         self.index_path = Path(index_path)
         self.data_folder = Path(data_folder)
         self.lyrics_folder = Path(lyrics_folder)
-        self.indexador = None
-        self._cargar_indexador()
+        self.indexador = indexador
+        if self.indexador is None:
+            self._cargar_indexador()
+        else:
+            print("   ✅ Usando indexador existente")
 
     def _cargar_indexador(self):
         print(f"\n📂 Cargando índice desde: {self.index_path}")
@@ -29,6 +34,9 @@ class RAGRetriever:
             self.indexador = IndexadorTFIDF(str(self.data_folder), str(self.lyrics_folder))
             self.indexador.cargar_indice(str(self.index_path))
             print(f"   ✅ Índice cargado: {self.indexador.num_documentos} documentos")
+            
+            # Registrar en el buscador para fallback keyword
+            set_indexador(self.indexador)
             
             # Verificar embeddings
             if hasattr(self.indexador, 'document_embeddings') and self.indexador.document_embeddings is not None:
@@ -49,51 +57,34 @@ class RAGRetriever:
         if self.indexador is None:
             raise RuntimeError("Indexador no inicializado correctamente")
         
-        return self._retrieve_con_coseno(query, top_k)
+        documentos = self._retrieve_hibrido(query, top_k)
+          
+        return documentos
     
-    def _retrieve_con_coseno(self, query, top_k=5):
-        """Búsqueda por similitud coseno"""
+    def _retrieve_hibrido(self, query, top_k=5):
+        """Búsqueda híbrida usando el motor de búsqueda avanzado"""
         try:
-            embedding_query = self.indexador.obtener_embedding(query)
-            if embedding_query is None:
-                print("   ⚠️ No se pudo generar embedding para la consulta")
-                return []
-            
-            if self.indexador.document_embeddings is None:
-                print("   ⚠️ No hay embeddings de documentos")
-                return []
-            
-            # Calcular similitud coseno
-            similitudes = np.dot(self.indexador.document_embeddings, embedding_query)
-            
-            # Obtener top_k
-            top_indices = np.argsort(similitudes)[::-1][:top_k]
+            # Usamos min_score=5 para ser más permisivos en RAG
+            resultados_avanzados = buscar_canciones_avanzado(query, min_score=5)
             
             documentos = []
-            doc_ids_order = getattr(self.indexador, 'document_ids_order', list(self.indexador.documentos.keys()))
+            for doc_id, score, razones in resultados_avanzados[:top_k]:
+                documento = self.indexador.obtener_documento(doc_id) or {}
+                documentos.append({
+                    "id": doc_id,
+                    "score": score,
+                    "titulo": documento.get("titulo", ""),
+                    "artista": documento.get("artista", ""),
+                    "generos": documento.get("generos", []),
+                    "tags": documento.get("tags", []),
+                    "letra": documento.get("letra", ""),
+                    "contexto": self._build_context(documento)
+                })
             
-            for idx in top_indices:
-                if idx < len(doc_ids_order):
-                    doc_id = doc_ids_order[idx]
-                    score = float(similitudes[idx])
-                    documento = self.indexador.obtener_documento(doc_id) or {}
-                    documentos.append({
-                        "id": doc_id,
-                        "score": score,
-                        "titulo": documento.get("titulo", ""),
-                        "artista": documento.get("artista", ""),
-                        "generos": documento.get("generos", []),
-                        "tags": documento.get("tags", []),
-                        "letra": documento.get("letra", ""),
-                        "contexto": self._build_context(documento)
-                    })
-            
-            print(f"   ✅ Búsqueda por coseno: {len(documentos)} resultados")
+            print(f"   ✅ Búsqueda híbrida: {len(documentos)} resultados")
             return documentos
-            
         except Exception as e:
-            print(f"   ❌ Error en búsqueda por coseno: {e}")
-            traceback.print_exc()
+            print(f"   ❌ Error en búsqueda híbrida: {e}")
             return []
 
     def _build_context(self, documento):

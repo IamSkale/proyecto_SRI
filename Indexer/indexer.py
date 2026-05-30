@@ -777,10 +777,11 @@ class IndexadorTFIDF:
                     if _HAS_SENTENCE_TRANSFORMERS and self.st_model_name:
                         try:
                             self.st_model = SentenceTransformer(self.st_model_name)
-                        except Exception:
+                        except Exception as e:
+                            print(f"⚠️  No se pudo cargar el modelo '{self.st_model_name}': {e}")
                             self.st_model = None
                 
-                print(f"  ✅ Cargados embeddings sentence-transformers desde disco: {st_embeddings_path.name}")
+                print(f"  ✅ Cargados embeddings sentence-transformers desde disco")
                 return True
             except Exception as e:
                 print(f"⚠️ Error cargando sentence-transformers embeddings: {e}")

@@ -21,7 +21,6 @@ indexador = None
 rag_pipeline = None
 
 def inicializar_indexador():
-    """Inicializa el indexador al arrancar la aplicación"""
     global indexador
     
     CARPETA_DATOS = "Database"
@@ -92,9 +91,11 @@ def buscar():
     query = data.get('query', '').strip()
     usar_genius = bool(data.get('usar_genius', False))
     genius_token = data.get('genius_token', '').strip()
+    # Nuevo parámetro para decidir si usar RAG
+    usar_rag = bool(data.get('usar_rag', True))
     
     if not query:
-        return jsonify([])
+        return jsonify({'answer': None, 'canciones': []})
     
     resultados_tuples = buscar_canciones_avanzado_con_web(
         query,
@@ -122,11 +123,29 @@ def buscar():
             }
             canciones.append(cancion)
     
-    return jsonify(canciones)
+    respuesta_rag = None
+    if usar_rag and canciones:
+        try:
+            pipeline = obtener_rag_pipeline()
+            # Usamos los documentos recuperados como contexto
+            # Tomamos los top 3 para el contexto del RAG
+            contexts = [
+                f"Título: {c['titulo']}\nArtista: {c['artista']}\nLetra: {c['letra']}" 
+                for c in canciones[:3]
+            ]
+            respuesta_rag = pipeline.generator.generate_answer(query, contexts)
+        except Exception as e:
+            print(f"⚠️ Error en generación RAG: {e}")
+            respuesta_rag = "No se pudo generar la respuesta enriquecida."
+
+    return jsonify({
+        'answer': respuesta_rag,
+        'canciones': canciones
+    })
 
 
 def obtener_rag_pipeline():
-    global rag_pipeline
+    global rag_pipeline, indexador
     if rag_pipeline is None:
         # Configuración para Qwen2.5 local
         use_gpu = os.environ.get('USE_GPU', 'false').lower() == 'true'
@@ -139,7 +158,8 @@ def obtener_rag_pipeline():
         rag_pipeline = RAGPipeline(
             model=model,
             model_path=model_path,
-            use_gpu=use_gpu
+            use_gpu=use_gpu,
+            indexador=indexador
         )
     return rag_pipeline
 

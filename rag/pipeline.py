@@ -13,7 +13,8 @@ class RAGPipeline:
                  model="qwen2.5-3b",  # Cambiado a Qwen2.5-7B
                  model_path=None,
                  use_gpu=False,
-                 api_key=None):
+                 api_key=None,
+                 indexador=None):
         
         print(f"\n🔧 Inicializando RAG Pipeline...")
         print(f"   Index path: {index_path}")
@@ -21,7 +22,8 @@ class RAGPipeline:
         
         self.retriever = RAGRetriever(index_path=index_path,
                                       data_folder=data_folder,
-                                      lyrics_folder=lyrics_folder)
+                                      lyrics_folder=lyrics_folder,
+                                      indexador=indexador)
         self.generator = RAGGenerator(
             model=model, 
             model_path=model_path,

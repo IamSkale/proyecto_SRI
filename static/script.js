@@ -23,15 +23,32 @@ async function buscarCanciones() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ query: query, usar_genius: usarGenius, genius_token: geniusToken })
+            body: JSON.stringify({ 
+                query: query, 
+                usar_genius: usarGenius, 
+                genius_token: geniusToken,
+                usar_rag: true 
+            })
         });
         
         if (!response.ok) {
             throw new Error('Error en la búsqueda');
         }
         
-        const resultados = await response.json();
-        mostrarResultados(resultados);
+        const data = await response.json();
+        
+        // Si hay una respuesta RAG, la mostramos primero
+        if (data.answer) {
+            answerContainer.innerHTML = `
+                <div class="rag-answer-card">
+                    <h2>✨ Respuesta RAG</h2>
+                    <p>${escapeHtml(data.answer).replace(/\n/g, '<br>')}</p>
+                </div>
+            `;
+        }
+        
+        // Mostramos las canciones encontradas
+        mostrarResultados(data.canciones || []);
         
     } catch (error) {
         console.error('Error:', error);
@@ -42,42 +59,9 @@ async function buscarCanciones() {
 }
 
 async function buscarRAG() {
-    const searchInput = document.getElementById('searchInput');
-    const query = searchInput.value.trim();
-
-    if (!query) {
-        mostrarMensaje('Por favor, ingresa un término de búsqueda', 'warning');
-        return;
-    }
-
-    // Limpiar resultados anteriores y mostrar loading
-    const resultsContainer = document.getElementById('resultsContainer');
-    const answerContainer = document.getElementById('ragAnswerContainer');
-    resultsContainer.innerHTML = '';
-    answerContainer.innerHTML = '';
-    mostrarLoading(true);
-
-    try {
-        const response = await fetch('/rag', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ query: query })
-        });
-
-        const data = await response.json();
-        if (!response.ok || data.error) {
-            throw new Error(data.error || 'Error en la búsqueda RAG');
-        }
-
-        mostrarResultadosRAG(data);
-    } catch (error) {
-        console.error('Error:', error);
-        mostrarMensaje('Error al realizar búsqueda RAG. Intenta de nuevo.', 'error');
-    } finally {
-        mostrarLoading(false);
-    }
+    // Ahora que el RAG está integrado, buscarRAG simplemente llama a buscarCanciones
+    // pero podríamos asegurar que el flag de RAG esté activo (aunque ya es por defecto)
+    return buscarCanciones();
 }
 
 function mostrarResultadosRAG(data) {
@@ -99,7 +83,7 @@ function mostrarResultadosRAG(data) {
     }
 
     resultsContainer.innerHTML = `
-        <div class="rag-documents-title">Documentos recuperados</div>
+        <div class="rag-documents-title">Canciones recuperadas</div>
         ${documentos.map((doc, index) => `
             <div class="song-card rag-doc-card">
                 <div class="song-header">
