@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Intentar importar llama-cpp-python para modelos locales GGUF
 try:
     from llama_cpp import Llama
     LLAMA_AVAILABLE = True
@@ -12,18 +11,8 @@ except ImportError:
     LLAMA_AVAILABLE = False
     print("⚠️ llama-cpp-python no instalado. Ejecuta: pip install llama-cpp-python")
 
-# Intentar importar transformers (alternativa más pesada pero más flexible)
-try:
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    import torch
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
 
-
-class RAGGenerator:
-    """Genera respuestas usando Qwen2.5-3B local o un LLM con fallback."""
-    
+class RAGGenerator:    
     # Opciones de modelo
     MODEL_OPTIONS = {
         "qwen2.5-3b": {
@@ -61,11 +50,9 @@ class RAGGenerator:
         self.model = None
         self.use_gpu = use_gpu
         
-        # Determinar la ruta del modelo
         if model_path:
             self.model_path = Path(model_path)
         else:
-            # Buscar en carpeta models/ local
             model_info = self.MODEL_OPTIONS.get(model, self.MODEL_OPTIONS["qwen2.5-3b"])
             self.model_path = Path("models") / model_info["gguf"]
             self.model_info = model_info
@@ -74,17 +61,12 @@ class RAGGenerator:
         print(f"   Model path: {self.model_path}")
         print(f"   GPU activada: {use_gpu}")
         
-        # Intentar cargar el modelo
         if not self._cargar_modelo():
             print("⚠️ No se pudo cargar modelo local. Usando fallback.")
 
-    def _cargar_modelo(self):
-        """Carga el modelo usando llama-cpp-python (recomendado) o transformers"""
-        
-        # Método 1: llama-cpp-python (más eficiente, recomendado)
+    def _cargar_modelo(self):        
         if LLAMA_AVAILABLE:
             try:
-                # Verificar si el archivo existe
                 if not self.model_path.exists():
                     print(f"❌ Archivo de modelo no encontrado: {self.model_path}")
                     print(f"\n📥 Para descargar el modelo:")
@@ -119,28 +101,6 @@ class RAGGenerator:
                 print(f"   ❌ Error cargando con llama-cpp: {e}")
                 print("   💡 Asegúrate de tener instalado: pip install llama-cpp-python")
         
-        # Método 2: transformers (alternativa más pesada)
-        if TRANSFORMERS_AVAILABLE and not self.use_gpu:  # Solo si no forzamos GPU
-            try:
-                print(f"   📂 Cargando modelo con transformers...")
-                print(f"   ⚠️ Este método usa más RAM (~12GB para 7B)")
-                
-                self.tokenizer = AutoTokenizer.from_pretrained(
-                    f"Qwen/{self.model_info['name']}" if hasattr(self, 'model_info') else "Qwen/Qwen2.5-3B-Instruct",
-                    trust_remote_code=True
-                )
-                self.model_hf = AutoModelForCausalLM.from_pretrained(
-                    f"Qwen/{self.model_info['name']}" if hasattr(self, 'model_info') else "Qwen/Qwen2.5-3B-Instruct",
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto" if torch.cuda.is_available() else None,
-                    trust_remote_code=True
-                )
-                print(f"   ✅ Modelo cargado con transformers")
-                return True
-                
-            except Exception as e:
-                print(f"   ❌ Error cargando con transformers: {e}")
-        
         return False
 
     def generate_answer(self, query, contexts, max_tokens=512, temperature=0.3):
@@ -152,7 +112,6 @@ class RAGGenerator:
 
         prompt = self._build_prompt(query, contexts)
 
-        # Usar modelo local si está cargado
         if self.model:
             try:
                 response = self._generate_with_llama_cpp(prompt, max_tokens, temperature)
@@ -167,8 +126,6 @@ class RAGGenerator:
         return self._fallback_answer(query, contexts)
 
     def _generate_with_llama_cpp(self, prompt, max_tokens, temperature):
-        """Genera usando llama-cpp-python"""
-        # Formato de chat para Qwen2.5
         formatted_prompt = self._format_qwen_chat(prompt)
         
         response = self.model(
@@ -182,7 +139,6 @@ class RAGGenerator:
         return response['choices'][0]['text'].strip()
 
     def _format_qwen_chat(self, user_message):
-        """Formatea el mensaje para Qwen2.5 usando el formato de chat"""
         return f"""<|im_start|>system
 Eres un asistente experto en música. Usa la información de contexto para responder de forma precisa y concisa.<|im_end|>
 <|im_start|>user
@@ -200,7 +156,7 @@ Eres un asistente experto en música. Usa la información de contexto para respo
             f"Usa los siguientes documentos como contexto para responder:\n\n"
             f"{contexto_texto}\n\n"
             f"Instrucciones:\n"
-            f"1. Responde basándote ÚNICAMENTE en la información proporcionada\n"
+            f"1. Usa el contexto de las letras de canciones para responder\n"
             f"2. Si la información es insuficiente, indícalo claramente\n"
             f"3. Sé conciso pero completo\n"
             f"4. Si mencionas canciones, incluye artista y título\n\n"
@@ -209,7 +165,6 @@ Eres un asistente experto en música. Usa la información de contexto para respo
         return prompt
 
     def _fallback_answer(self, query, contexts, error=None):
-        """Fallback cuando el modelo local no está disponible"""
         mensaje = []
         
         if error:
@@ -233,15 +188,3 @@ Eres un asistente experto en música. Usa la información de contexto para respo
         mensaje.append("   3. Reinicia la aplicación")
         
         return "\n".join(mensaje)
-    
-    def get_model_info(self):
-        """Retorna información del modelo actual"""
-        if hasattr(self, 'model_info'):
-            return {
-                'cargado': self.model is not None,
-                'nombre': self.model_info['name'],
-                'contexto': self.model_info.get('context', 8192),
-                'tamaño_ram': self.model_info.get('ram_gb', '?'),
-                'archivo': str(self.model_path)
-            }
-        return {'cargado': False, 'nombre': self.model_name}

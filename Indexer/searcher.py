@@ -1,13 +1,11 @@
 import re
 import math
 import requests
-import json
 import time
 
 import numpy as np
 from collections import Counter
 from difflib import SequenceMatcher
-from pathlib import Path
 
 try:
     from bs4 import BeautifulSoup
@@ -28,26 +26,7 @@ def calcular_similitud_textual(texto1, texto2):
     return SequenceMatcher(None, texto1.lower(), texto2.lower()).ratio()
 
 
-def calcular_puntuacion_bm25(tokens_query, doc_tokens, doc_len, avg_doc_len, k1=1.5, b=0.75):
-    score = 0
-    doc_freq = Counter(doc_tokens)
-    
-    for termino in set(tokens_query):
-        if termino in doc_freq:
-            tf = doc_freq[termino]
-            # Frecuencia del término en el documento
-            tf_component = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (doc_len / avg_doc_len)))
-            
-            # IDF (ya lo tenemos del indexador)
-            idf = math.log((_indexador_global.num_documentos - _indexador_global.frecuencia_documentos.get(termino, 0) + 0.5) / 
-                          (_indexador_global.frecuencia_documentos.get(termino, 0) + 0.5) + 1)
-            
-            score += tf_component * idf
-    
-    return score
-
-
-def buscar_canciones_avanzado(query, min_score=15):
+def buscar_canciones_avanzado(query, min_score=5, modo="auto"):
     global _indexador_global
     
     if not query.strip():
@@ -56,232 +35,229 @@ def buscar_canciones_avanzado(query, min_score=15):
     query = query.lower().strip()
     resultados = []
     
-    # Calcular longitud promedio de documentos para BM25
+    # ===== 1. PREPROCESAMIENTO DE LA QUERY =====
+    palabras_query = set(query.split())
+    query_len = len(palabras_query)
+    
+    # Determinar automáticamente el tipo de query
+    es_query_semantica = False
+    if modo == "auto":
+        # Heurísticas para identificar query semántica
+        palabras_semanticas = {'canciones', 'temas', 'sobre', 'about',
+                               'songs', 'de', 'acerca'}
+        
+        es_query_semantica = (
+            len(palabras_semanticas & palabras_query) > 1
+        )
+    elif modo == "semantico":
+        es_query_semantica = True
+    else:  # modo == "lexico"
+        es_query_semantica = False
+    
+    # ===== 2. CÁLCULO DE EMBEDDINGS SEMÁNTICOS =====
     semantic_scores = {}
+    query_vec = None
+    
+    if _indexador_global and getattr(_indexador_global, 'document_embeddings', None) is not None:
+        query_vec = _indexador_global.obtener_embedding(query)
+        if query_vec is not None:
+            # Búsqueda semántica vectorial
+            for idx, doc_id in enumerate(_indexador_global.document_ids_order or _indexador_global.documentos.keys()):
+                if idx < len(_indexador_global.document_embeddings):
+                    # Similitud coseno (valores entre -1 y 1, normalmente 0-1 para textos)
+                    similarity = float(np.dot(_indexador_global.document_embeddings[idx], query_vec))
+                    # Normalizar a [0, 1] si es necesario (valores negativos son raros en este contexto)
+                    semantic_scores[doc_id] = max(0.0, similarity)
+    
+    # ===== 3. PREPARAR MÉTRICAS GLOBALES PARA BM25 =====
     if _indexador_global:
         doc_lengths = [len(doc['letra'].split()) + len(doc['titulo'].split()) + len(doc['artista'].split()) 
                        for doc in _indexador_global.documentos.values()]
         avg_doc_len = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 100
-
-        # Búsqueda por similitud coseno usando embeddings
-        if getattr(_indexador_global, 'document_embeddings', None) is not None:
-            query_vec = _indexador_global.obtener_embedding(query)
-            if query_vec is not None:
-                # Búsqueda exhaustiva por similitud coseno
-                for idx, doc_id in enumerate(_indexador_global.document_ids_order or _indexador_global.documentos.keys()):
-                    if idx < len(_indexador_global.document_embeddings):
-                        semantic_scores[doc_id] = float(np.dot(_indexador_global.document_embeddings[idx], query_vec))
     
+    # ===== 4. ITERAR SOBRE DOCUMENTOS =====
     for doc_id, cancion in (_indexador_global.documentos.items() if _indexador_global else info_completa.items()):
-        puntuacion = 0
-        razones = []
+        # Inicializar scores
+        score_lexico = 0.0
+        score_semantico = semantic_scores.get(doc_id, 0.0)
+        razones_lexico = []
+        razones_semantico = []
         
-        # 1. Similitud en título (muy importante)
-        similitud_titulo = calcular_similitud_textual(query, cancion['titulo'])
-        if similitud_titulo > 0.3:
-            puntuacion += similitud_titulo * 5.0
-            razones.append(f"título ({similitud_titulo:.2f})")
+        titulo_lower = cancion['titulo'].lower()
+        artista_lower = cancion['artista'].lower()
         
-        # 2. Similitud en artista
-        similitud_artista = calcular_similitud_textual(query, cancion['artista'])
-        if similitud_artista > 0.3:
-            puntuacion += similitud_artista * 5.0
-            razones.append(f"artista ({similitud_artista:.2f})")
+        # ===== 4.1 PUNTUACIÓN LÉXICA =====
         
-        # 3. Búsqueda por palabras clave en título y artista
-        palabras_query = set(query.split())
-        palabras_titulo = set(cancion['titulo'].lower().split())
-        palabras_artista = set(cancion['artista'].lower().split())
+        # a) Coincidencia exacta de la consulta completa (máxima relevancia)
+        if query == titulo_lower:
+            score_lexico += 15.0
+            razones_lexico.append("título exacto (+15)")
+        elif query == artista_lower:
+            score_lexico += 12.0
+            razones_lexico.append("artista exacto (+12)")
+        # Frase completa en título (sin ser exacta)
+        elif query in titulo_lower:
+            score_lexico += 8.0
+            razones_lexico.append("frase en título (+8)")
+        elif query in artista_lower:
+            score_lexico += 6.0
+            razones_lexico.append("frase en artista (+6)")
         
-        coincidencias_titulo = len(palabras_query & palabras_titulo)
-        coincidencias_artista = len(palabras_query & palabras_artista)
+        # b) Jaccard similarity para título (mejor que contar coincidencias)
+        palabras_titulo = set(titulo_lower.split())
+        if palabras_query and palabras_titulo:
+            interseccion = len(palabras_query & palabras_titulo)
+            union = len(palabras_query | palabras_titulo)
+            jaccard_titulo = interseccion / union if union > 0 else 0
+            
+            if jaccard_titulo > 0:
+                puntaje_jaccard = jaccard_titulo * 8.0
+                score_lexico += puntaje_jaccard
+                if jaccard_titulo > 0.3:
+                    razones_lexico.append(f"título (Jaccard={jaccard_titulo:.2f}, +{puntaje_jaccard:.1f})")
         
-        if coincidencias_titulo > 0:
-            puntuacion += coincidencias_titulo * 2.0
-            razones.append(f"{coincidencias_titulo} palabras en título")
-        if coincidencias_artista > 0:
-            puntuacion += coincidencias_artista * 2.0
-            razones.append(f"{coincidencias_artista} palabras en artista")
+        # c) Jaccard similarity para artista
+        palabras_artista = set(artista_lower.split())
+        if palabras_query and palabras_artista:
+            interseccion = len(palabras_query & palabras_artista)
+            union = len(palabras_query | palabras_artista)
+            jaccard_artista = interseccion / union if union > 0 else 0
+            
+            if jaccard_artista > 0:
+                puntaje_jaccard = jaccard_artista * 6.0
+                score_lexico += puntaje_jaccard
+                if jaccard_artista > 0.3:
+                    razones_lexico.append(f"artista (Jaccard={jaccard_artista:.2f}, +{puntaje_jaccard:.1f})")
         
-        # 4. Búsqueda en letra usando BM25 (parte del método híbrido)
-        if _indexador_global:
+        # d) BM25 para letra (solo si hay términos significativos)
+        if _indexador_global and len(palabras_query) > 1:
             texto_completo = f"{cancion['titulo']} {cancion['artista']} {cancion['letra']}"
             tokens_doc = _indexador_global.procesador.limpiar_texto(texto_completo)
             tokens_query_proc = _indexador_global.procesador.limpiar_texto(query)
             
-            doc_len = len(texto_completo.split())
-            puntuacion_bm25 = calcular_puntuacion_bm25(tokens_query_proc, tokens_doc, doc_len, avg_doc_len)
-            puntuacion += puntuacion_bm25 * 1.5
-            if puntuacion_bm25 > 0:
-                razones.append(f"BM25 ({puntuacion_bm25:.3f})")
-
-            # 4.1. Similaridad semántica con embeddings locales
-            sem_sim = semantic_scores.get(doc_id, 0.0)
-            if sem_sim > 0:
-                puntuacion += sem_sim * 4.0
-                if sem_sim > 0.05:
-                    razones.append(f"semántica ({sem_sim:.2f})")
+            if tokens_query_proc:
+                doc_len = len(texto_completo.split())
+                puntuacion_bm25 = calcular_puntuacion_bm25(tokens_query_proc, tokens_doc, doc_len, avg_doc_len)
+                
+                # Normalizar BM25 (máximo +5)
+                puntuacion_bm25_norm = min(puntuacion_bm25 / 10.0, 5.0)
+                if puntuacion_bm25_norm > 0.5:
+                    score_lexico += puntuacion_bm25_norm
+                    razones_lexico.append(f"BM25 ({puntuacion_bm25:.2f} → +{puntuacion_bm25_norm:.1f})")
         
-        # 5. Bonus por coincidencia exacta de frase
-        if query in cancion['titulo'].lower():
-            puntuacion += 8.0
-            razones.append("frase exacta en título")
-        elif query in cancion['artista'].lower():
-            puntuacion += 8.0
-            razones.append("frase exacta en artista")
-
-        if query == cancion['artista'].lower() and cancion['artista'].strip():
-            puntuacion += 5.0
-            razones.append("artista completo")
+        # e) Bonus por palabra inicial (sutil)
+        if palabras_query:
+            primera_palabra = list(palabras_query)[0]
+            if titulo_lower.startswith(primera_palabra):
+                score_lexico += 2.0
+                razones_lexico.append(f"título comienza con '{primera_palabra}' (+2)")
         
-        # 6. Bonus por palabras iniciales
-        palabras_query_lista = query.split()
-        if palabras_query_lista:
-            primera_palabra = palabras_query_lista[0]
-            if cancion['titulo'].lower().startswith(primera_palabra):
-                puntuacion += 3.0
-                razones.append(f"título comienza con '{primera_palabra}'")
+        # ===== 4.2 CÁLCULO DEL FACTOR SEMÁNTICO MULTIPLICATIVO =====
         
-        # FILTRO DE RELEVANCIA MÍNIMA
-        if puntuacion >= min_score:
-            resultados.append((doc_id, puntuacion, razones))
+        # Calcular factor semántico basado en el score de similitud
+        # Rango: 0.1 a 2.0 (penaliza baja semántica, bonifica alta)
+        if score_semantico > 0:
+            if score_semantico < 0.3:
+                # Semántica mala: factor entre 0.1 y 0.5
+                factor_semantico = 0.1 + (score_semantico / 0.3) * 0.4
+            elif score_semantico < 0.7:
+                # Semántica media: factor entre 0.5 y 1.0
+                factor_semantico = 0.5 + ((score_semantico - 0.3) / 0.4) * 0.5
+            else:
+                # Semántica buena: factor entre 1.0 y 2.0
+                factor_semantico = 1.0 + ((score_semantico - 0.7) / 0.3) * 1.0
+        else:
+            # Sin coincidencia semántica: penalización fuerte
+            factor_semantico = 0.1
+        
+        razones_semantico.append(f"sim={score_semantico:.2f} → factor={factor_semantico:.2f}")
+        
+        # ===== 4.3 PUNTUACIÓN FINAL SEGÚN TIPO DE QUERY =====
+        
+        if es_query_semantica:
+            # Para queries semánticas: filtro más estricto y dominancia semántica
+            if score_semantico < 0.25:
+                # Ignorar resultados con muy baja semántica en queries semánticas
+                continue
+            
+            # Fórmula: priorizar semántica, léxico como apoyo
+            if score_semantico > 0.75:
+                # Alta semántica: bonificación adicional
+                puntuacion_total = (score_semantico * 40) + (score_lexico * 0.5)
+                razones_semantico.append("bonus: alta semántica")
+            else:
+                # Semántica media
+                puntuacion_total = (score_semantico * 30) + (score_lexico * 0.3)
+        else:
+            # Para queries léxicas (títulos/artistas): dominancia léxica
+            if score_lexico < 3 and score_semantico < 0.3:
+                # Muy poco relevante
+                continue
+            
+            # Bonus multicampo para queries léxicas
+            campos_coincidentes = 0
+            if jaccard_titulo > 0.2 if 'jaccard_titulo' in locals() else False:
+                campos_coincidentes += 1
+            if jaccard_artista > 0.2 if 'jaccard_artista' in locals() else False:
+                campos_coincidentes += 1
+            if score_semantico > 0.5:
+                campos_coincidentes += 1
+            
+            # Fórmula: priorizar léxico, semántica como apoyo
+            puntuacion_total = score_lexico + (score_semantico * 10.0)
+            
+            if campos_coincidentes >= 2:
+                bonus_multicampo = 3.0
+                puntuacion_total += bonus_multicampo
+                razones_lexico.append(f"multicampo ({campos_coincidentes} campos, +{bonus_multicampo})")
+        
+        # Aplicar factor semántico multiplicativo (ajuste fino)
+        puntuacion_total = puntuacion_total * factor_semantico
+        
+        # Combinar razones
+        razones = razones_lexico + razones_semantico
+        
+        # Añadir información de diagnóstico si está disponible
+        if score_semantico > 0:
+            razones.append(f"puntaje_final={puntuacion_total:.1f}")
+        
+        # ===== 5. FILTRAR POR PUNTUACIÓN MÍNIMA =====
+        if puntuacion_total >= min_score:
+            resultados.append((doc_id, puntuacion_total, razones))
     
-    # Ordenar por puntuación (mayor a menor)
+    # Ordenar por puntuación descendente
     resultados.sort(key=lambda x: x[1], reverse=True)
+    
+    # Logging para depuración (opcional)
+    if resultados and len(resultados) > 0:
+        print(f"📊 Búsqueda | tipo={'semántica' if es_query_semantica else 'léxica'} | "
+              f"min_score={min_score} | resultados={len(resultados)} | "
+              f"top_score={resultados[0][1]:.2f}")
     
     return resultados
 
-def buscar_canciones(query, info_completa=None, min_score=15):
-    resultados = buscar_canciones_avanzado(query, info_completa, min_score)
-    return [doc_id for doc_id, score, razones in resultados]
 
-
-def mostrar_resultados(ids=None, info_completa=None, query=None, min_score=15):
-    global _indexador_global
+def calcular_puntuacion_bm25(tokens_query, doc_tokens, doc_len, avg_doc_len, k1=1.5, b=0.75):
+    if not tokens_query or not doc_tokens:
+        return 0.0
     
-    # Si no se pasaron IDs y hay query, buscar con método híbrido
-    if ids is None and query:
-        resultados = buscar_canciones_avanzado(query, info_completa, min_score)
-        ids_con_puntaje = resultados
-        ids = [doc_id for doc_id, _, _ in resultados]
-    elif ids and not isinstance(ids[0], tuple) and query:
-        resultados = buscar_canciones_avanzado(query, info_completa, min_score)
-        ids_con_puntaje = resultados
-        ids = [doc_id for doc_id, _, _ in resultados]
-    elif ids and isinstance(ids[0], tuple):
-        # Filtrar por min_score si ya vienen con puntaje
-        ids_con_puntaje = [(doc_id, score, razones) for doc_id, score, razones in ids if score >= min_score]
-        ids = [doc_id for doc_id, score, _ in ids_con_puntaje]
-    else:
-        ids_con_puntaje = [(doc_id, 0, []) for doc_id in ids if ids] if ids else []
+    score = 0.0
+    doc_freq = Counter(doc_tokens)
     
-    if not ids:
-        print("\n❌ No se encontraron canciones.")
-        return
-    
-    print(f"\n✅ Encontradas {len(ids)} canciones (relevancia ≥ {min_score}):")
-    print("=" * 70)
-    
-    for i, (doc_id, score, razones) in enumerate(ids_con_puntaje[:15], 1):
-        # Obtener documento
-        if _indexador_global:
-            c = _indexador_global.obtener_documento(doc_id)
-        elif info_completa:
-            c = info_completa.get(doc_id, {})
-        else:
-            continue
-        
-        if not c:
-            continue
-        
-        # Mostrar con puntuación
-        print(f"\n{i}. [Relevancia: {score:.2f}] 🎵 {c.get('titulo', 'SIN TÍTULO')}")
-        print(f"   👤 Artista: {c.get('artista', 'DESCONOCIDO')}")
-        
-        # Mostrar razón de relevancia
-        if razones:
-            razones_str = ', '.join(razones[:3])
-            print(f"   📊 Relevancia por: {razones_str}")
-        
-        # Mostrar álbum si existe
-        if c.get('album'):
-            print(f"   💿 Álbum: {c['album']}")
-        
-        # Mostrar géneros si existen
-        if c.get('generos'):
-            generos_str = ', '.join(c['generos'][:3])
-            print(f"   🏷️  Géneros: {generos_str}")
-        
-        # Mostrar tags si existen
-        if c.get('tags'):
-            tags_str = ', '.join(c['tags'][:3])
-            print(f"   🔖 Tags: {tags_str}")
-        
-        # Mostrar fragmento de letra
-        if c.get('letra') and query:
-            query_lower = query.lower()
-            letra_lower = c['letra'].lower()
-            pos = letra_lower.find(query_lower)
+    for termino in set(tokens_query):
+        if termino in doc_freq:
+            tf = doc_freq[termino]
             
-            if pos != -1:
-                inicio = max(0, pos - 50)
-                fin = min(len(c['letra']), pos + 100)
-                fragmento = c['letra'][inicio:fin].replace('\n', ' ')
-                print(f"   📝 ...{fragmento}...")
-            else:
-                palabras = query_lower.split()
-                for palabra in palabras[:2]:
-                    if len(palabra) > 3 and palabra in letra_lower:
-                        pos = letra_lower.find(palabra)
-                        if pos != -1:
-                            inicio = max(0, pos - 40)
-                            fin = min(len(c['letra']), pos + 60)
-                            fragmento = c['letra'][inicio:fin].replace('\n', ' ')
-                            print(f"   📝 ...{fragmento}...")
-                            break
-                else:
-                    preview = c['letra'][:100].replace('\n', ' ')
-                    if len(preview) > 10:
-                        print(f"   📝 {preview}...")
-        
-        print("-" * 50)
+            # Componente TF con normalización por longitud
+            tf_component = (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * (doc_len / avg_doc_len)))
+            
+            # IDF (evitar división por cero)
+            df = _indexador_global.frecuencia_documentos.get(termino, 0)
+            idf = math.log((_indexador_global.num_documentos - df + 0.5) / (df + 0.5) + 1)
+            
+            score += tf_component * idf
     
-    if len(ids) > 15:
-        print(f"\n... y {len(ids) - 15} resultados más.")
-
-def mostrar_detalle_completo(cancion_id, info_completa=None):
-    global _indexador_global
-    
-    if _indexador_global:
-        c = _indexador_global.obtener_documento(cancion_id)
-    elif info_completa:
-        c = info_completa.get(cancion_id)
-    else:
-        c = None
-    
-    if not c:
-        print("❌ Canción no encontrada")
-        return
-    
-    print("\n" + "=" * 60)
-    print(f"🎵 {c.get('titulo', 'SIN TÍTULO')}")
-    print(f"👤 Artista: {c.get('artista', 'DESCONOCIDO')}")
-    if c.get('album'):
-        print(f"💿 Álbum: {c['album']}")
-    if c.get('generos'):
-        print(f"🏷️  Géneros: {', '.join(c['generos'])}")
-    if c.get('tags'):
-        print(f"🔖 Tags: {', '.join(c['tags'][:10])}")
-    
-    if _indexador_global and hasattr(_indexador_global, 'idiomas_documentos'):
-        idioma = _indexador_global.idiomas_documentos.get(cancion_id, 'desconocido')
-        nombre_idioma = {'es': 'Español', 'en': 'Inglés', 'fr': 'Francés', 'pt': 'Portugués', 'it': 'Italiano'}
-        print(f"🌐 Idioma detectado: {nombre_idioma.get(idioma, idioma)}")
-    
-    print("\n📝 LETRA COMPLETA:")
-    print("-" * 40)
-    print(c.get('letra', 'No hay letra disponible'))
-    print("=" * 60)
+    return score
 
 
 def buscar_en_genius(query, max_intentos=10, genius_token=None):
@@ -446,7 +422,7 @@ def agregar_canciones_encontradas(canciones_nuevas):
     return canciones_agregadas, ids_nuevos
 
 
-def buscar_canciones_avanzado_con_web(query, min_score=15, usar_genius=False, genius_token=None):
+def buscar_canciones_avanzado_con_web(query, min_score=5, usar_genius=False, genius_token=None):
     # Búsqueda local primero
     resultados_locales = buscar_canciones_avanzado(query, min_score)
     

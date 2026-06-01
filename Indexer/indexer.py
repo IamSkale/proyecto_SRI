@@ -1,4 +1,3 @@
-import csv
 import re
 import math
 import json
@@ -300,7 +299,6 @@ class IndexadorTFIDF:
         tags = defaultdict(list)
         letras = {}
         
-        # Cargar id_information.csv
         archivo_info = self.data_folder / 'id_information.csv'
         if archivo_info.exists():
             with open(archivo_info, 'r', encoding='utf-8') as f:
@@ -323,7 +321,6 @@ class IndexadorTFIDF:
         else:
             print(f"  ❌ No se encontró {archivo_info}")
         
-        # Cargar id_genres.csv
         archivo_genres = self.data_folder / 'id_genres.csv'
         if archivo_genres.exists():
             with open(archivo_genres, 'r', encoding='utf-8') as f:
@@ -338,7 +335,6 @@ class IndexadorTFIDF:
         else:
             print(f"  ❌ No se encontró {archivo_genres}")
         
-        # Cargar id_tags.csv
         archivo_tags = self.data_folder / 'id_tags.csv'
         if archivo_tags.exists():
             with open(archivo_tags, 'r', encoding='utf-8') as f:
@@ -354,7 +350,6 @@ class IndexadorTFIDF:
         else:
             print(f"  ❌ No se encontró {archivo_tags}")
         
-        # Cargar letras
         archivos_letras = list(self.lyrics_folder.glob('*.txt'))
         for archivo in archivos_letras:
             id_cancion = archivo.stem
@@ -362,7 +357,6 @@ class IndexadorTFIDF:
                 letras[id_cancion] = f.read()
         print(f"  ✅ Cargadas {len(letras)} letras")
         
-        # Unificar todo
         todos_ids = set(canciones.keys()) | set(generos.keys()) | set(tags.keys()) | set(letras.keys())
         
         for id_cancion in todos_ids:
@@ -429,7 +423,6 @@ class IndexadorTFIDF:
         print(f"  ✅ Vocabulario: {len(self.vocabulario)} términos únicos")
         print(f"  ✅ Documentos procesados: {self.num_documentos}")
 
-        # Construir índice semántico sobre los documentos procesados
         self.construir_indice_semantico()
 
     def _texto_semantico_doc(self, doc):
@@ -443,7 +436,6 @@ class IndexadorTFIDF:
 
     def construir_indice_semantico(self, n_components=128, max_features=5000):
         return self.construir_indice_semantico_with_options(n_components=n_components, max_features=max_features)
-
 
     def construir_indice_semantico_with_options(self, n_components=128, max_features=5000, use_sentence_transformer=None, batch_size=64):
         if use_sentence_transformer is None:
@@ -488,12 +480,10 @@ class IndexadorTFIDF:
             X_reduced = self.svd.fit_transform(X)
             self.document_embeddings = normalize(X_reduced)
 
-
     def obtener_embedding(self, texto):
         if not texto:
             return None
 
-        # Si tenemos un modelo sentence-transformers cargado, usarlo para consultas
         if self.st_model is not None:
             try:
                 emb = self.st_model.encode([texto], convert_to_numpy=True)
@@ -635,9 +625,6 @@ class IndexadorTFIDF:
     
     def obtener_documento(self, doc_id):
         return self.documentos.get(doc_id)
-    
-    def obtener_info_completa(self):
-        return self.documentos
     
     def agregar_documento(self, cancion_data):
         # Generar ID único basado en titulo y artista
@@ -844,8 +831,3 @@ class IndexadorTFIDF:
         print("="*60)
         
         return self
-
-def cargar_todo(data_folder, lyrics_folder):
-    indexador = IndexadorTFIDF(data_folder, lyrics_folder)
-    indexador.cargar_datos()
-    return indexador.obtener_info_completa()

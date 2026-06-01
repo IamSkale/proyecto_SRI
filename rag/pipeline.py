@@ -1,6 +1,5 @@
 from .retriever import RAGRetriever
 from .generator import RAGGenerator
-import os
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -99,7 +99,7 @@ def buscar():
     
     resultados_tuples = buscar_canciones_avanzado_con_web(
         query,
-        min_score=15,
+        min_score=5,
         usar_genius=usar_genius,
         genius_token=genius_token
     )
