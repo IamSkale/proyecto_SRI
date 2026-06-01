@@ -15,9 +15,18 @@ from Crawler.crawler import MusicCrawler
 def main():
     """Ejecutar el crawler con configuración predefinida."""
     
-    # URL semilla para azlyrics.com, que permite crawling limitado
+    # Solicitar token de acceso a Genius
+    print("\n🔑 CONFIGURACIÓN DE ACCESO")
+    genius_token = input("Ingrese su Token de Acceso de Genius (Client Access Token): ").strip()
+    
+    if not genius_token:
+        print("⚠️  No se proporcionó token. El scraping de Genius podría ser limitado o fallar.")
+
+    # URL semilla para genius.com
     seed_urls = [
-        "https://www.azlyrics.com/",
+        "https://genius.com/",           # Página principal
+        "https://genius.com/explore",    # Explorar canciones
+        "https://genius.com/artists",    # Índice de artistas
     ]
 
     # Configuración del crawler
@@ -26,7 +35,9 @@ def main():
         'delay': 2.0,      # 2 segundos entre requests (respetuoso)
         'data_dir': 'Database/crawled_data',
         'user_agent': 'MusicResearchCrawler/1.0 (educational project)',
-        'max_retries': 3
+        'max_retries': 3,
+        'genius_token': genius_token,
+        'respect_robots': False  # Desactivado para permitir el scraping de Genius
     }
 
     print("\n" + "="*60)

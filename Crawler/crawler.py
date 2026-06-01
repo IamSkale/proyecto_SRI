@@ -35,7 +35,7 @@ class MusicCrawler:
     """
 
     def __init__(self, seed_urls, max_pages=1000, delay=1.0, data_dir="Database/crawled_data",
-                 user_agent="MusicResearchCrawler/1.0 (educational project)", max_retries=3):
+                 user_agent="MusicResearchCrawler/1.0 (educational project)", max_retries=3, genius_token=None, respect_robots=True):
         """
         Inicializar el crawler.
 
@@ -46,6 +46,8 @@ class MusicCrawler:
             data_dir (str): Directorio para almacenar datos extraídos
             user_agent (str): User-Agent para identificar el crawler
             max_retries (int): Número máximo de reintentos por request
+            genius_token (str): Token de acceso para la API de Genius
+            respect_robots (bool): Si se debe respetar el archivo robots.txt
         """
         self.seed_urls = seed_urls
         self.max_pages = max_pages
@@ -53,6 +55,8 @@ class MusicCrawler:
         self.data_dir = Path(data_dir)
         self.user_agent = user_agent
         self.max_retries = max_retries
+        self.genius_token = genius_token
+        self.respect_robots = respect_robots
 
         self.visited_urls = set()
         self.song_data = []
@@ -110,13 +114,19 @@ class MusicCrawler:
         session.mount("https://", adapter)
 
         # Headers por defecto
-        session.headers.update({
+        headers = {
             'User-Agent': self.user_agent,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive',
-        })
+        }
+
+        # Agregar token de Genius si está disponible
+        if self.genius_token:
+            headers['Authorization'] = f'Bearer {self.genius_token}'
+
+        session.headers.update(headers)
 
         return session
 
@@ -188,7 +198,7 @@ class MusicCrawler:
 
         return song_info
 
-    def find_new_urls(self, soup, base_url, max_new_urls=10):
+    def find_new_urls(self, soup, base_url, max_new_urls=20):
         """
         Encontrar nuevas URLs relevantes para crawlear.
 
@@ -235,9 +245,8 @@ class MusicCrawler:
             bool: True si es relevante
         """
         relevant_patterns = [
-            '/lyrics/', '/song/', '/artist/', '/album/',
-            '/track/', '/music/', '/cancion/', '/letra/',
-            '/artists/', '/songs/', '/albums/'
+            '/lyrics', '/songs/', '/artists/', '/albums/',
+            '-lyrics', '-annotated', '/search', '/tags/'
         ]
 
         url_lower = url.lower()
@@ -260,7 +269,7 @@ class MusicCrawler:
             bool: True si es un dominio confiable
         """
         trusted_domains = [
-            'azlyrics.com'
+            'genius.com'
         ]
 
         try:
@@ -314,19 +323,50 @@ class MusicCrawler:
             'tiempo_ejecucion': time.time() - getattr(self, 'start_time', time.time())
         }
 
+    def discover_via_genius_api(self):
+        """Usa la API de Genius para encontrar URLs de canciones populares."""
+        discovered_urls = []
+        try:
+            # Buscar algunos términos comunes para obtener una variedad de canciones
+            search_terms = ['top', 'love', 'rock', 'pop', 'hip hop', 'latin']
+            headers = {'Authorization': f'Bearer {self.genius_token}'}
+            
+            for term in search_terms:
+                url = f"https://api.genius.com/search?q={term}"
+                response = requests.get(url, headers=headers, timeout=10)
+                if response.status_code == 200:
+                    hits = response.json().get('response', {}).get('hits', [])
+                    for hit in hits:
+                        song_url = hit.get('result', {}).get('url')
+                        if song_url:
+                            discovered_urls.append(song_url)
+                
+            self.logger.info(f"✨ API de Genius encontró {len(discovered_urls)} URLs iniciales")
+        except Exception as e:
+            self.logger.error(f"⚠️ Error usando API de Genius para descubrimiento: {e}")
+            
+        return discovered_urls
+
     def crawl(self):
         """
         Método principal que ejecuta el proceso de crawling.
         """
         self.logger.info("🚀 Iniciando proceso de crawling musical...")
+        
+        # Si tenemos token de Genius, usar la API para obtener URLs iniciales reales
+        if self.genius_token:
+            self.logger.info("📡 Usando API de Genius para descubrir canciones iniciales...")
+            api_seed_urls = self.discover_via_genius_api()
+            self.seed_urls.extend(api_seed_urls)
+
         self.logger.info(f"📊 Límite de páginas: {self.max_pages}")
         self.logger.info(f"⏱️  Delay entre requests: {self.delay}s")
         self.logger.info(f"📁 Directorio de datos: {self.data_dir}")
 
         self.start_time = time.time()
 
-        # Inicializar cola con URLs semilla
-        self.queue.extend(self.seed_urls)
+        # Inicializar cola con URLs semilla (evitando duplicados)
+        self.queue.extend(list(set(self.seed_urls)))
         self.logger.info(f"📋 Cola inicializada con {len(self.queue)} URLs")
 
         pages_crawled = 0
@@ -342,7 +382,7 @@ class MusicCrawler:
                 self.logger.info(f"🔍 Crawleando: {current_url}")
 
                 # Verificar robots.txt
-                if not self.check_robots_txt(current_url):
+                if self.respect_robots and not self.check_robots_txt(current_url):
                     self.logger.warning(f"🚫 Saltando {current_url} (bloqueado por robots.txt)")
                     self.visited_urls.add(current_url)
                     continue
@@ -427,12 +467,9 @@ class MusicCrawler:
 
 # Ejemplo de uso y configuración
 if __name__ == "__main__":
-    # URLs semilla para diferentes sitios musicales confiables
+    # URLs semilla para Genius
     seed_urls = [
-        "https://www.azlyrics.com/",  # Permite crawling limitado
-        # Agregar más URLs después de verificar robots.txt
-        # "https://genius.com/",
-        # "https://www.lyrics.com/",
+        "https://genius.com/",
     ]
 
     # Configuración del crawler
@@ -441,7 +478,8 @@ if __name__ == "__main__":
         'delay': 2.0,      # 2 segundos entre requests (respetuoso)
         'data_dir': 'Database/crawled_data',
         'user_agent': 'MusicResearchCrawler/1.0 (educational project)',
-        'max_retries': 3
+        'max_retries': 3,
+        'genius_token': None  # Se puede pasar el token aquí
     }
 
     print("🎵 CRAWLER MUSICAL - PROYECTO SRI")

@@ -70,26 +70,55 @@ class GeniusScraper(MusicScraper):
         }
 
         try:
-            # Extraer título
+            # Extraer título - Intentar varios métodos
             titulo_elem = soup.find('h1')
             if titulo_elem:
                 datos['titulo'] = titulo_elem.get_text(strip=True)
+            
+            if not datos['titulo']:
+                # Intentar meta tag de og:title
+                meta_title = soup.find('meta', property='og:title')
+                if meta_title:
+                    datos['titulo'] = meta_title.get('content', '').split(' – ')[-1].strip()
 
             # Extraer artista(s)
-            artista_elem = soup.find('a', {'class': re.compile('.*artist.*')})
+            artista_elem = soup.find('a', {'class': re.compile('.*Artist.*|.*artist.*')})
+            if not artista_elem:
+                artista_elem = soup.select_one('a[class*="ArtistName"], span[class*="ArtistName"]')
+            
             if artista_elem:
                 datos['artista'] = artista_elem.get_text(strip=True)
+            
+            if not datos['artista']:
+                # Intentar meta tag de og:title (formato: "Artist – Title")
+                meta_title = soup.find('meta', property='og:title')
+                if meta_title:
+                    content = meta_title.get('content', '')
+                    if ' – ' in content:
+                        datos['artista'] = content.split(' – ')[0].strip()
+                    elif ' - ' in content:
+                        datos['artista'] = content.split(' - ')[0].strip()
 
-            # Extraer letra
-            lyrics_container = soup.find('div', {'data-lyrics-container': 'true'})
-            if lyrics_container:
-                versos = lyrics_container.find_all(['br', 'div'])
-                letra_lineas = []
-                for verso in versos:
-                    texto = verso.get_text(strip=True)
-                    if texto:
-                        letra_lineas.append(texto)
-                datos['letra'] = '\n'.join(letra_lineas)
+            # Extraer letra - Usando la lógica de Indexer/searcher.py
+            lyrics_nodes = soup.find_all('div', {'data-lyrics-container': 'true'})
+            if not lyrics_nodes:
+                lyrics_nodes = soup.select('div[class*="Lyrics__Container"]')
+
+            if lyrics_nodes:
+                fragments = []
+                for node in lyrics_nodes:
+                    # Copiamos la lógica de searcher.py para preservar saltos de línea
+                    for br in node.find_all('br'):
+                        br.replace_with('\n')
+                    fragments.append(node.get_text(separator='\n'))
+                
+                letra = '\n'.join([fragment.strip() for fragment in fragments if fragment.strip()])
+                datos['letra'] = letra.strip() if letra.strip() else ""
+            else:
+                # Fallback de letras clásicas
+                letras_fallback = soup.find('div', class_='lyrics')
+                if letras_fallback:
+                    datos['letra'] = letras_fallback.get_text(strip=True)
 
             # Extraer géneros
             generos_elems = soup.find_all('a', {'class': re.compile('.*genre.*')})
@@ -430,6 +459,7 @@ class FactoryScraper:
     """Factory para obtener el scraper correcto según el dominio."""
 
     scrapers = {
+        'genius.com': GeniusScraper(),
         'azlyrics.com': AZLyricsScraper(),
     }
 
