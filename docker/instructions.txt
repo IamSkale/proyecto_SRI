@@ -1,0 +1,10 @@
+# 1. Dar permisos de ejecución a los scripts
+chmod +x docker-run.sh entrypoint.sh
+
+# 2. Construir la imagen
+./docker-run.sh build
+
+# 3. Ejecutar en modo CPU (recomendado para la mayoría)
+./docker-run.sh run
+
+# 4. Acceder a http://localhost:5000

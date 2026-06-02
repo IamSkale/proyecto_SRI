@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Servicio principal de búsqueda musical
+  music-search:
+    build: .
+    container_name: sri-music-search
+    ports:
+      - "5000:5000"
+    volumes:
+      # Persistencia de datos (índices, modelos, base de datos)
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./Database:/app/Database
+      # Volumen para logs
+      - ./logs:/app/logs
+      # Para desarrollo (opcional, comentar en producción)
+      - ./templates:/app/templates
+      - ./static:/app/static
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      - USE_GPU=false
+      - RAG_MODEL=${RAG_MODEL:-qwen2.5-3b}
+      - MODEL_PATH=/app/models/qwen2.5-3b-instruct-q4_k_m.gguf
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - sri-network
+
+  # Servicio opcional con GPU (si está disponible)
+  music-search-gpu:
+    build: .
+    container_name: sri-music-search-gpu
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./Database:/app/Database
+    environment:
+      - FLASK_ENV=production
+      - USE_GPU=true
+      - RAG_MODEL=${RAG_MODEL:-qwen2.5-3b}
+      - MODEL_PATH=/app/models/qwen2.5-3b-instruct-q4_k_m.gguf
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - sri-network
+
+  # Servicio de desarrollo (con hot-reload)
+  music-search-dev:
+    build: .
+    container_name: sri-music-search-dev
+    ports:
+      - "5002:5000"
+    volumes:
+      - .:/app  # Montar todo el código para desarrollo
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - USE_GPU=false
+    command: flask run --host=0.0.0.0 --port=5000 --debug
+    networks:
+      - sri-network
+
+networks:
+  sri-network:
+    driver: bridge
