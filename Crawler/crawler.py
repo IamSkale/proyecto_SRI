@@ -1,11 +1,3 @@
-"""
-Módulo de Crawling y Scraping para Sistema de Búsqueda Musical
-Proyecto Integrador SRI - Corte 1
-
-Este módulo implementa un crawler que recopila información musical
-de fuentes web confiables, respetando políticas de crawling éticas.
-"""
-
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -23,32 +15,8 @@ from urllib3.util.retry import Retry
 from Scraper.scraper import FactoryScraper
 
 class MusicCrawler:
-    """
-    Crawler especializado para recopilar información musical de la web.
-
-    Características:
-    - Respeta robots.txt y políticas de crawling
-    - Rate limiting para evitar sobrecargar servidores
-    - Extracción estructurada de datos musicales
-    - Almacenamiento organizado en JSON
-    - Filtrado de URLs relevantes para música
-    """
-
     def __init__(self, seed_urls, max_pages=1000, delay=1.0, data_dir="Database/crawled_data",
                  user_agent="MusicResearchCrawler/1.0 (educational project)", max_retries=3, genius_token=None, respect_robots=True):
-        """
-        Inicializar el crawler.
-
-        Args:
-            seed_urls (list): URLs iniciales para comenzar el crawling
-            max_pages (int): Límite máximo de páginas a crawlear
-            delay (float): Segundos de espera entre requests
-            data_dir (str): Directorio para almacenar datos extraídos
-            user_agent (str): User-Agent para identificar el crawler
-            max_retries (int): Número máximo de reintentos por request
-            genius_token (str): Token de acceso para la API de Genius
-            respect_robots (bool): Si se debe respetar el archivo robots.txt
-        """
         self.seed_urls = seed_urls
         self.max_pages = max_pages
         self.delay = delay
@@ -75,7 +43,6 @@ class MusicCrawler:
         self.logger.info(f"Crawler inicializado con {len(seed_urls)} URLs semilla")
 
     def setup_logging(self):
-        """Configurar sistema de logging para el crawler."""
         self.logger = logging.getLogger('MusicCrawler')
         self.logger.setLevel(logging.INFO)
 
@@ -131,15 +98,6 @@ class MusicCrawler:
         return session
 
     def check_robots_txt(self, url):
-        """
-        Verificar si podemos crawlear esta URL según robots.txt.
-
-        Args:
-            url (str): URL a verificar
-
-        Returns:
-            bool: True si está permitido crawlear
-        """
         try:
             parsed_url = urlparse(url)
             robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
@@ -154,17 +112,6 @@ class MusicCrawler:
             return True  # Si no hay robots.txt, asumir que está permitido
 
     def extract_song_data(self, soup, url):
-        """
-        Extraer información de canción de la página HTML.
-        Utiliza el FactoryScraper para scraping especializado por dominio.
-
-        Args:
-            soup (BeautifulSoup): Objeto BeautifulSoup de la página
-            url (str): URL de la página
-
-        Returns:
-            dict: Diccionario con información extraída de la canción
-        """
         try:
             # Obtener el HTML como string
             html = str(soup)
@@ -199,17 +146,6 @@ class MusicCrawler:
         return song_info
 
     def find_new_urls(self, soup, base_url, max_new_urls=20):
-        """
-        Encontrar nuevas URLs relevantes para crawlear.
-
-        Args:
-            soup (BeautifulSoup): Página parseada
-            base_url (str): URL base para resolver enlaces relativos
-            max_new_urls (int): Máximo número de nuevas URLs a retornar
-
-        Returns:
-            list: Lista de nuevas URLs relevantes
-        """
         new_urls = []
 
         # Buscar enlaces
@@ -235,15 +171,6 @@ class MusicCrawler:
         return new_urls
 
     def is_relevant_url(self, url):
-        """
-        Determinar si una URL es relevante para el dominio musical.
-
-        Args:
-            url (str): URL a evaluar
-
-        Returns:
-            bool: True si es relevante
-        """
         relevant_patterns = [
             '/lyrics', '/songs/', '/artists/', '/albums/',
             '-lyrics', '-annotated', '/search', '/tags/'
@@ -259,15 +186,6 @@ class MusicCrawler:
         return False
 
     def is_trusted_domain(self, url):
-        """
-        Verificar si el dominio es confiable para crawling.
-
-        Args:
-            url (str): URL a verificar
-
-        Returns:
-            bool: True si es un dominio confiable
-        """
         trusted_domains = [
             'genius.com'
         ]
@@ -286,13 +204,6 @@ class MusicCrawler:
             return False
 
     def save_data(self, filename=None):
-        """
-        Guardar datos extraídos en archivo JSON.
-
-        Args:
-            filename (str, optional): Nombre del archivo. Si no se especifica,
-                                    se genera automáticamente con timestamp.
-        """
         if not filename:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             filename = f"crawled_songs_{timestamp}.json"
@@ -309,12 +220,6 @@ class MusicCrawler:
             print(f"❌ Error guardando datos: {e}")
 
     def get_stats(self):
-        """
-        Obtener estadísticas del proceso de crawling.
-
-        Returns:
-            dict: Estadísticas actuales
-        """
         return {
             'paginas_visitadas': len(self.visited_urls),
             'canciones_extraidas': len(self.song_data),
@@ -348,9 +253,6 @@ class MusicCrawler:
         return discovered_urls
 
     def crawl(self):
-        """
-        Método principal que ejecuta el proceso de crawling.
-        """
         self.logger.info("🚀 Iniciando proceso de crawling musical...")
         
         # Si tenemos token de Genius, usar la API para obtener URLs iniciales reales

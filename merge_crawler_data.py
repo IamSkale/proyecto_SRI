@@ -39,7 +39,7 @@ class MergerIndicesCompleto:
     Clase para integrar datos del crawler a TODOS los índices del sistema.
     """
     
-    def __init__(self, index_path="indice_musica.json", data_folder="Database", lyrics_folder="Database/lyrics"):
+    def __init__(self, index_path="Database/indice_musica.json", data_folder="Database", lyrics_folder="Database/lyrics"):
         self.index_path = Path(index_path)
         self.data_folder = Path(data_folder)
         self.lyrics_folder = Path(lyrics_folder)
